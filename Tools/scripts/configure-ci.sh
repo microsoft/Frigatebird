@@ -52,6 +52,6 @@ fi
 
 pip install --user argparse empy pyserial pexpect mavproxy
 
-git clone --depth=50 --branch=master https://github.com/${TRAVIS_REPO_SLUG}.git master
+git clone --branch=master https://github.com/${TRAVIS_REPO_SLUG}.git master
 cd master
 git submodule update --init --recursive
