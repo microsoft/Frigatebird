@@ -850,7 +850,7 @@ bool SoaringController::update_vario()
 
         if (sg_filter == 1)
         {
-            _vario_sg_filter.prediction(dt, (const float **)_ekf_buffer, EKF_MAX_BUFFER_SIZE, _ptr, &_filtered_vario_reading, &_filtered_vario_reading_rate);
+            _vario_sg_filter.prediction(dt, _ekf_buffer, EKF_MAX_BUFFER_SIZE, _ptr, &_filtered_vario_reading, &_filtered_vario_reading_rate);
         }
         else
         {

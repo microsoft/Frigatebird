@@ -4,7 +4,7 @@
 #include "VarioSavitzkyGolayFilter.h"
 
 void
-VarioSavitzkyGolayFilter::prediction(float dt, const float **ekf_buffer, unsigned ekf_buffer_size, unsigned ekf_buffer_ptr, float *Edot, float *Edotdot)
+VarioSavitzkyGolayFilter::prediction(float dt, const float ekf_buffer[][5], unsigned ekf_buffer_size, unsigned ekf_buffer_ptr, float *Edot, float *Edotdot)
 {
     float z2 = _c_z*_c_z;
     float z3 = z2 * _c_z;
