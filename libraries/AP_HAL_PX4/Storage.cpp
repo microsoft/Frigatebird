@@ -24,7 +24,7 @@ using namespace PX4;
 // name the storage file after the sketch so you can use the same sd
 // card for ArduCopter and ArduPlane
 #define STORAGE_DIR "/fs/microsd/APM"
-//#define SAVE_STORAGE_FILE STORAGE_DIR "/" SKETCHNAME ".sav"
+#define SAVE_STORAGE_FILE STORAGE_DIR "/" SKETCHNAME ".bak"
 #define MTD_PARAMS_FILE "/fs/mtd"
 
 extern const AP_HAL::HAL& hal;
@@ -53,11 +53,10 @@ void PX4Storage::_storage_open(void)
 #endif
 
 #ifdef SAVE_STORAGE_FILE
-    fd = open(SAVE_STORAGE_FILE, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+    int fd = open(SAVE_STORAGE_FILE, O_WRONLY|O_CREAT|O_TRUNC, 0644);
     if (fd != -1) {
         write(fd, _buffer, sizeof(_buffer));
         close(fd);
-        ::printf("Saved storage file %s\n", SAVE_STORAGE_FILE);
     }
 #endif
     _initialised = true;
@@ -267,7 +266,19 @@ void PX4Storage::_flash_write(uint16_t line)
 bool PX4Storage::_flash_write_data(uint8_t sector, uint32_t offset, const uint8_t *data, uint16_t length)
 {
     size_t base_address = up_progmem_getaddress(_flash_page+sector);
-    return up_progmem_write(base_address+offset, data, length) == length;
+    bool ret = up_progmem_write(base_address+offset, data, length) == length;
+    if (!ret && _flash_erase_ok()) {
+        // we are getting flash write errors while disarmed. Try
+        // re-writing all of flash
+        uint32_t now = AP_HAL::millis();
+        if (now - _last_re_init_ms > 5000) {
+            _last_re_init_ms = now;
+            bool ok = _flash.re_initialise();
+            printf("Storage: failed at %u:%u for %u - re-init %u\n",
+                   sector, offset, length, (unsigned)ok);
+        }
+    }
+    return ret;
 }
 
 /*

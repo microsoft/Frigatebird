@@ -2,7 +2,6 @@
 // Licensed under the GPLv3 license
 
 #include "Plane.h"
-
 /*
 *  ArduSoar support function
 */
@@ -240,8 +239,10 @@ void Plane::update_soaring()
             g2.soaring_controller.get_target(next_WP_loc);
         }
         break;
+        
     case MANUAL:
         g2.soaring_controller.stop_computation();
+
     default:
         // nothing to do
         break;

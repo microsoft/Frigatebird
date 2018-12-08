@@ -38,9 +38,12 @@ void Plane::set_control_channels(void)
         SRV_Channels::set_safety_limit(SRV_Channel::k_throttle, aparm.throttle_min<0?SRV_Channel::SRV_CHANNEL_LIMIT_TRIM:SRV_Channel::SRV_CHANNEL_LIMIT_MIN);
     }
 
-    // setup correct scaling for ESCs like the UAVCAN PX4ESC which
-    // take a proportion of speed
-    g2.servo_channels.set_esc_scaling_for(SRV_Channel::k_throttle);
+    if (!quadplane.enable) {
+        // setup correct scaling for ESCs like the UAVCAN PX4ESC which
+        // take a proportion of speed. For quadplanes we use AP_Motors
+        // scaling
+        g2.servo_channels.set_esc_scaling_for(SRV_Channel::k_throttle);
+    }
 }
 
 /*
@@ -87,18 +90,15 @@ void Plane::init_rc_out_main()
  */
 void Plane::init_rc_out_aux()
 {
-    update_aux();
     SRV_Channels::enable_aux_servos();
 
-    hal.rcout->cork();
+    SRV_Channels::cork();
     
-    // Initialization of servo outputs
-    SRV_Channels::output_trim_all();
-
     servos_output();
     
     // setup PWM values to send if the FMU firmware dies
-    SRV_Channels::setup_failsafe_trim_all();  
+    // allows any VTOL motors to shut off
+    SRV_Channels::setup_failsafe_trim_all_non_motors();
 }
 
 /*
@@ -171,40 +171,28 @@ void Plane::rudder_arm_disarm_check()
 
 void Plane::read_radio()
 {
-    if (!hal.rcin->new_input()) {
-        control_failsafe(channel_throttle->get_radio_in());
+    if (!RC_Channels::read_input()) {
+        control_failsafe();
         return;
     }
 
-    if(!failsafe.ch3_failsafe)
+    if(!failsafe.rc_failsafe)
     {
         failsafe.AFS_last_valid_rc_ms = millis();
     }
 
     failsafe.last_valid_rc_ms = millis();
 
-    elevon.ch1_temp = channel_roll->read();
-    elevon.ch2_temp = channel_pitch->read();
-    uint16_t pwm_roll, pwm_pitch;
-
-    pwm_roll = elevon.ch1_temp;
-    pwm_pitch = elevon.ch2_temp;
-
-    RC_Channels::set_pwm_all();
-    
     if (control_mode == TRAINING) {
         // in training mode we don't want to use a deadzone, as we
         // want manual pass through when not exceeding attitude limits
-        channel_roll->set_pwm_no_deadzone(pwm_roll);
-        channel_pitch->set_pwm_no_deadzone(pwm_pitch);
-        channel_throttle->set_pwm_no_deadzone(channel_throttle->read());
-        channel_rudder->set_pwm_no_deadzone(channel_rudder->read());
-    } else {
-        channel_roll->set_pwm(pwm_roll);
-        channel_pitch->set_pwm(pwm_pitch);
+        channel_roll->recompute_pwm_no_deadzone();
+        channel_pitch->recompute_pwm_no_deadzone();
+        channel_throttle->recompute_pwm_no_deadzone();
+        channel_rudder->recompute_pwm_no_deadzone();
     }
 
-    control_failsafe(channel_throttle->get_radio_in());
+    control_failsafe();
 
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, channel_throttle->get_control_in());
 
@@ -240,7 +228,7 @@ void Plane::read_radio()
     tuning.check_input(control_mode);
 }
 
-void Plane::control_failsafe(uint16_t pwm)
+void Plane::control_failsafe()
 {
     if (millis() - failsafe.last_valid_rc_ms > 1000 || rc_failsafe_active()) {
         // we do not have valid RC input. Set all primary channel
@@ -248,6 +236,7 @@ void Plane::control_failsafe(uint16_t pwm)
         channel_roll->set_radio_in(channel_roll->get_radio_trim());
         channel_pitch->set_radio_in(channel_pitch->get_radio_trim());
         channel_rudder->set_radio_in(channel_rudder->get_radio_trim());
+        rudder_input = 0;
 
         // note that we don't set channel_throttle->radio_in to radio_trim,
         // as that would cause throttle failsafe to not activate
@@ -264,36 +253,40 @@ void Plane::control_failsafe(uint16_t pwm)
         if (rc_failsafe_active()) {
             // we detect a failsafe from radio
             // throttle has dropped below the mark
-            failsafe.ch3_counter++;
-            if (failsafe.ch3_counter == 10) {
-                gcs().send_text(MAV_SEVERITY_WARNING, "Throttle failsafe on %u", (unsigned)pwm);
-                failsafe.ch3_failsafe = true;
+            failsafe.throttle_counter++;
+            if (failsafe.throttle_counter == 10) {
+                gcs().send_text(MAV_SEVERITY_WARNING, "Throttle failsafe on");
+                failsafe.rc_failsafe = true;
                 AP_Notify::flags.failsafe_radio = true;
             }
-            if (failsafe.ch3_counter > 10) {
-                failsafe.ch3_counter = 10;
+            if (failsafe.throttle_counter > 10) {
+                failsafe.throttle_counter = 10;
             }
 
-        }else if(failsafe.ch3_counter > 0) {
+        }else if(failsafe.throttle_counter > 0) {
             // we are no longer in failsafe condition
             // but we need to recover quickly
-            failsafe.ch3_counter--;
-            if (failsafe.ch3_counter > 3) {
-                failsafe.ch3_counter = 3;
+            failsafe.throttle_counter--;
+            if (failsafe.throttle_counter > 3) {
+                failsafe.throttle_counter = 3;
             }
-            if (failsafe.ch3_counter == 1) {
-                gcs().send_text(MAV_SEVERITY_WARNING, "Throttle failsafe off %u", (unsigned)pwm);
-            } else if(failsafe.ch3_counter == 0) {
-                failsafe.ch3_failsafe = false;
+            if (failsafe.throttle_counter == 1) {
+                gcs().send_text(MAV_SEVERITY_WARNING, "Throttle failsafe off");
+            } else if(failsafe.throttle_counter == 0) {
+                failsafe.rc_failsafe = false;
                 AP_Notify::flags.failsafe_radio = false;
             }
         }
     }
 }
 
-void Plane::trim_control_surfaces()
+bool Plane::trim_radio()
 {
-    read_radio();
+    if (failsafe.rc_failsafe) {
+        // can't trim if we don't have valid input
+        return false;
+    }
+
     int16_t trim_roll_range = (channel_roll->get_radio_max() - channel_roll->get_radio_min())/5;
     int16_t trim_pitch_range = (channel_pitch->get_radio_max() - channel_pitch->get_radio_min())/5;
     if (channel_roll->get_radio_in() < channel_roll->get_radio_min()+trim_roll_range ||
@@ -304,7 +297,7 @@ void Plane::trim_control_surfaces()
         // there is less than 20 percent range left then assume the
         // sticks are not properly centered. This also prevents
         // problems with starting APM with the TX off
-        return;
+        return false;
     }
 
     // trim main surfaces
@@ -339,15 +332,8 @@ void Plane::trim_control_surfaces()
     channel_roll->set_and_save_trim();
     channel_pitch->set_and_save_trim();
     channel_rudder->set_and_save_trim();
-}
 
-void Plane::trim_radio()
-{
-    for (uint8_t y = 0; y < 30; y++) {
-        read_radio();
-    }
-
-    trim_control_surfaces();
+    return true;
 }
 
 /*

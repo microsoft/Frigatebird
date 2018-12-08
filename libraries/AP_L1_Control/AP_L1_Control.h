@@ -21,12 +21,16 @@
 
 class AP_L1_Control : public AP_Navigation {
 public:
-    AP_L1_Control(AP_AHRS &ahrs, const AP_SpdHgtControl * spdHgtControl)
-        : _ahrs(ahrs),
-          _spdHgtControl(spdHgtControl)
+    AP_L1_Control(AP_AHRS &ahrs, const AP_SpdHgtControl *spdHgtControl)
+        : _ahrs(ahrs)
+        , _spdHgtControl(spdHgtControl)
     {
         AP_Param::setup_object_defaults(this, var_info);
     }
+
+    /* Do not allow copies */
+    AP_L1_Control(const AP_L1_Control &other) = delete;
+    AP_L1_Control &operator=(const AP_L1_Control&) = delete;
 
     /* see AP_Navigation.h for the definitions and units of these
      * functions */
@@ -46,7 +50,7 @@ public:
     float turn_distance(float wp_radius) const;
     float turn_distance(float wp_radius, float turn_angle) const;
     float loiter_radius (const float loiter_radius) const;
-    void update_waypoint(const struct Location &prev_WP, const struct Location &next_WP);
+    void update_waypoint(const struct Location &prev_WP, const struct Location &next_WP, float dist_min = 0.0f);
     void update_loiter(const struct Location &center_WP, float radius, int8_t loiter_direction);
     void update_heading_hold(int32_t navigation_heading_cd);
     void update_level_flight(void);

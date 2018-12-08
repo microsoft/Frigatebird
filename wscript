@@ -2,6 +2,7 @@
 # encoding: utf-8
 
 from __future__ import print_function
+from subprocess import call
 
 import os.path
 import sys
@@ -22,6 +23,9 @@ from waflib import Build, ConfigSet, Configure, Context, Utils
 # TODO: replace defines with the use of the generated ap_config.h file
 # this makes recompilation at least when defines change. which might
 # be sufficient.
+
+# Default installation prefix for Linux boards
+default_prefix = '/usr/'
 
 def _set_build_context_variant(variant):
     for c in Context.classes:
@@ -64,31 +68,58 @@ def options(opt):
         default=False,
         help='Configure as debug variant.')
 
+    g.add_option('--bootloader',
+        action='store_true',
+        default=False,
+        help='Configure for building a bootloader.')
+
     g.add_option('--no-autoconfig',
         dest='autoconfig',
         action='store_false',
         default=True,
-        help='''
-Disable autoconfiguration feature. By default, the build system triggers a
-reconfiguration whenever it thinks it's necessary - this option disables that.
+        help='''Disable autoconfiguration feature. By default, the build system
+triggers a reconfiguration whenever it thinks it's necessary - this
+option disables that.
 ''')
 
     g.add_option('--no-submodule-update',
         dest='submodule_update',
         action='store_false',
         default=True,
-        help='''
-Don't update git submodules. Useful for building with submodules at specific
-revisions.
+        help='''Don't update git submodules. Useful for building with
+submodules at specific revisions.
 ''')
+
+    g.add_option('--enable-header-checks', action='store_true',
+        default=False,
+        help="Enable checking of headers")
+
+    g.add_option('--default-parameters',
+        default=None,
+        help='set default parameters to embed in the firmware')
+
+    g = opt.ap_groups['linux']
+
+    linux_options = ('--prefix', '--destdir', '--bindir', '--libdir')
+    for k in linux_options:
+        option = opt.parser.get_option(k)
+        if option:
+            opt.parser.remove_option(k)
+            g.add_option(option)
+
+    g.add_option('--apstatedir',
+        action='store',
+        default='',
+        help='''Where to save data like parameters, log and terrain.
+This is the --localstatedir + ArduPilots subdirectory [default:
+board-dependent, usually /var/lib/ardupilot]''')
 
     g.add_option('--rsync-dest',
         dest='rsync_dest',
         action='store',
         default='',
-        help='''
-Destination for the rsync Waf command. It can be passed during configuration in
-order to save typing.
+        help='''Destination for the rsync Waf command. It can be passed during
+configuration in order to save typing.
 ''')
 
     g.add_option('--enable-benchmarks',
@@ -96,9 +127,9 @@ order to save typing.
         default=False,
         help='Enable benchmarks.')
 
-    g.add_option('--disable-lttng', action='store_true',
+    g.add_option('--enable-lttng', action='store_true',
         default=False,
-        help="Don't use lttng even if supported by board and dependencies available")
+        help="Enable lttng integration")
 
     g.add_option('--disable-libiio', action='store_true',
         default=False,
@@ -107,6 +138,10 @@ order to save typing.
     g.add_option('--disable-tests', action='store_true',
         default=False,
         help="Disable compilation and test execution")
+
+    g.add_option('--enable-sfml', action='store_true',
+                 default=False,
+                 help="Enable SFML graphics library")
 
     g.add_option('--static',
         action='store_true',
@@ -136,14 +171,13 @@ def configure(cfg):
     cfg.env.AUTOCONFIG = cfg.options.autoconfig
 
     cfg.env.VARIANT = cfg.env.BOARD
-    if cfg.env.DEBUG:
-        cfg.env.VARIANT += '-debug'
 
     _set_build_context_variant(cfg.env.VARIANT)
     cfg.setenv(cfg.env.VARIANT)
 
     cfg.env.BOARD = cfg.options.board
     cfg.env.DEBUG = cfg.options.debug
+    cfg.env.BOOTLOADER = cfg.options.bootloader
 
     # Allow to differentiate our build from the make build
     cfg.define('WAF_BUILD', 1)
@@ -205,6 +239,12 @@ def configure(cfg):
         cfg.msg('Setting rsync destination to', cfg.options.rsync_dest)
         cfg.env.RSYNC_DEST = cfg.options.rsync_dest
 
+    if cfg.options.enable_header_checks:
+        cfg.msg('Enabling header checks', cfg.options.enable_header_checks)
+        cfg.env.ENABLE_HEADER_CHECKS = True
+    else:
+        cfg.env.ENABLE_HEADER_CHECKS = False
+
     # TODO: Investigate if code could be changed to not depend on the
     # source absolute path.
     cfg.env.prepend_value('DEFINES', [
@@ -234,6 +274,17 @@ def collect_dirs_to_recurse(bld, globs, **kw):
 def list_boards(ctx):
     print(*boards.get_boards_names())
 
+def board(ctx):
+    env = ConfigSet.ConfigSet()
+    try:
+        p = os.path.join(Context.out_dir, Build.CACHE_DIR, Build.CACHE_SUFFIX)
+        env.load(p)
+    except:
+        print('No board currently configured')
+        return
+
+    print('Board configured to: {}'.format(env.VARIANT))
+
 def _build_cmd_tweaks(bld):
     if bld.cmd == 'check-all':
         bld.options.all_tests = True
@@ -245,20 +296,23 @@ def _build_cmd_tweaks(bld):
         bld.options.clear_failed_tests = True
 
 def _build_dynamic_sources(bld):
-    bld(
-        features='mavgen',
-        source='modules/mavlink/message_definitions/v1.0/ardupilotmega.xml',
-        output_dir='libraries/GCS_MAVLink/include/mavlink/v2.0/',
-        name='mavlink',
-        # this below is not ideal, mavgen tool should set this, but that's not
-        # currently possible
-        export_includes=[
+    if not bld.env.BOOTLOADER:
+        print('Copying over a replacement ardupilotmega.xml file to modules/mavlink/message_definitions/v1.0/, as needed')
+        call('{} --checksum ardupilotmega.xml modules/mavlink/message_definitions/v1.0/'.format(bld.env.RSYNC[0]), shell=True)
+        bld(
+            features='mavgen',
+            source='modules/mavlink/message_definitions/v1.0/ardupilotmega.xml',
+            output_dir='libraries/GCS_MAVLink/include/mavlink/v2.0/',
+            name='mavlink',
+            # this below is not ideal, mavgen tool should set this, but that's not
+            # currently possible
+            export_includes=[
             bld.bldnode.make_node('libraries').abspath(),
             bld.bldnode.make_node('libraries/GCS_MAVLink').abspath(),
-        ],
-    )
+            ],
+            )
 
-    if bld.get_board().with_uavcan:
+    if bld.get_board().with_uavcan or bld.env.HAL_WITH_UAVCAN==True:
         bld(
             features='uavcangen',
             source=bld.srcnode.ant_glob('modules/uavcan/dsdl/uavcan/**/*.uavcan'),
@@ -356,6 +410,12 @@ def _build_post_funs(bld):
     if bld.env.SUBMODULE_UPDATE:
         bld.git_submodule_post_fun()
 
+def load_pre_build(bld):
+    '''allow for a pre_build() function in build modules'''
+    brd = bld.get_board()
+    if getattr(brd, 'pre_build', None):
+        brd.pre_build(bld)    
+
 def build(bld):
     config_hash = Utils.h_file(bld.bldnode.make_node('ap_config.h').abspath())
     bld.env.CCDEPS = config_hash
@@ -369,7 +429,9 @@ def build(bld):
         use=['mavlink'],
         cxxflags=['-include', 'ap_config.h'],
     )
-    
+
+    load_pre_build(bld)
+
     if bld.get_board().with_uavcan:
         bld.env.AP_LIBRARIES_OBJECTS_KW['use'] += ['uavcan']
 
@@ -400,7 +462,7 @@ ardupilotwaf.build_command('check-all',
     doc='shortcut for `waf check --alltests`',
 )
 
-for name in ('plane'):
+for name in ('plane', 'bootloader'):
     ardupilotwaf.build_command(name,
         program_group_list=name,
         doc='builds %s programs' % name,

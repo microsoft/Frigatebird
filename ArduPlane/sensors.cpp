@@ -1,22 +1,6 @@
 #include "Plane.h"
 #include <AP_RSSI/AP_RSSI.h>
 
-void Plane::init_barometer(bool full_calibration)
-{
-    gcs().send_text(MAV_SEVERITY_INFO, "Calibrating barometer");
-    if (full_calibration) {
-        barometer.calibrate();
-    } else {
-        barometer.update_calibration();
-    }
-    gcs().send_text(MAV_SEVERITY_INFO, "Barometer calibration complete");
-}
-
-void Plane::init_rangefinder(void)
-{
-    rangefinder.init();
-}
-
 /*
   read the rangefinder and update height estimate
  */
@@ -46,8 +30,9 @@ void Plane::read_rangefinder(void)
 
     rangefinder.update();
 
-    if (should_log(MASK_LOG_SONAR))
+    if ((rangefinder.num_sensors() > 0) && should_log(MASK_LOG_SONAR)) {
         Log_Write_Sonar();
+    }
 
     rangefinder_height_update();
 }
@@ -83,7 +68,7 @@ void Plane::read_airspeed(void)
     if (airspeed.enabled()) {
         airspeed.read();
         if (should_log(MASK_LOG_IMU)) {
-            Log_Write_Airspeed();
+            DataFlash.Log_Write_Airspeed(airspeed);
         }
 
         // supply a new temperature to the barometer from the digital
@@ -106,42 +91,6 @@ void Plane::read_airspeed(void)
     }
 }
 
-void Plane::zero_airspeed(bool in_startup)
-{
-    airspeed.calibrate(in_startup);
-    read_airspeed();
-    // update barometric calibration with new airspeed supplied temperature
-    barometer.update_calibration();
-    gcs().send_text(MAV_SEVERITY_INFO,"Airspeed calibration started");
-}
-
-// read_battery - reads battery voltage and current and invokes failsafe
-// should be called at 10hz
-void Plane::read_battery(void)
-{
-    battery.read();
-    compass.set_current(battery.current_amps());
-
-    if (hal.util->get_soft_armed() &&
-        battery.exhausted(g.fs_batt_voltage, g.fs_batt_mah)) {
-        low_battery_event();
-    }
-    if (battery.get_type() != AP_BattMonitor::BattMonitor_TYPE_NONE) {
-        AP_Notify::flags.battery_voltage = battery.voltage();
-    }
-    
-    if (should_log(MASK_LOG_CURRENT)) {
-        Log_Write_Current();
-    }
-}
-
-// read the receiver RSSI as an 8 bit number for MAVLink
-// RC_CHANNELS_SCALED message
-void Plane::read_receiver_rssi(void)
-{
-    receiver_rssi = rssi.read_receiver_rssi_uint8();
-}
-
 /*
   update RPM sensors
  */
@@ -155,21 +104,6 @@ void Plane::rpm_update(void)
     }
 }
 
-/*
-  update AP_Button
- */
-void Plane::button_update(void)
-{
-    g2.button.update();
-}
-
-/*
-  update AP_ICEngine
- */
-void Plane::ice_update(void)
-{
-    g2.ice_control.update();
-}
 // update error mask of sensors and subsystems. The mask
 // uses the MAV_SYS_STATUS_* values from mavlink. If a bit is set
 // then it indicates that the sensor or subsystem is present but
@@ -206,10 +140,6 @@ void Plane::update_sensor_status_flags(void)
         control_sensors_present |= MAV_SYS_STATUS_LOGGING;
     }
 
-    if (plane.battery.healthy()) {
-        control_sensors_present |= MAV_SYS_STATUS_SENSOR_BATTERY;
-    }
-
     // all present sensors enabled by default except rate control, attitude stabilization, yaw, altitude, position control, geofence, motor, and battery output which we will set individually
     control_sensors_enabled = control_sensors_present & (~MAV_SYS_STATUS_SENSOR_ANGULAR_RATE_CONTROL & ~MAV_SYS_STATUS_SENSOR_ATTITUDE_STABILIZATION & ~MAV_SYS_STATUS_SENSOR_YAW_POSITION & ~MAV_SYS_STATUS_SENSOR_Z_ALTITUDE_CONTROL & ~MAV_SYS_STATUS_SENSOR_XY_POSITION_CONTROL & ~MAV_SYS_STATUS_SENSOR_MOTOR_OUTPUTS & ~MAV_SYS_STATUS_GEOFENCE & ~MAV_SYS_STATUS_LOGGING & ~MAV_SYS_STATUS_SENSOR_BATTERY);
 
@@ -225,7 +155,7 @@ void Plane::update_sensor_status_flags(void)
         control_sensors_enabled |= MAV_SYS_STATUS_LOGGING;
     }
 
-    if (g.fs_batt_voltage > 0 || g.fs_batt_mah > 0) {
+    if (battery.num_instances() > 0) {
         control_sensors_enabled |= MAV_SYS_STATUS_SENSOR_BATTERY;
     }
 
@@ -303,10 +233,10 @@ void Plane::update_sensor_status_flags(void)
     if (barometer.all_healthy()) {
         control_sensors_health |= MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE;
     }
-    if (g.compass_enabled && compass.healthy(0) && ahrs.use_compass()) {
+    if (g.compass_enabled && compass.healthy() && ahrs.use_compass()) {
         control_sensors_health |= MAV_SYS_STATUS_SENSOR_3D_MAG;
     }
-    if (gps.status() >= AP_GPS::GPS_OK_FIX_3D) {
+    if (gps.status() >= AP_GPS::GPS_OK_FIX_3D && gps.is_healthy()) {
         control_sensors_health |= MAV_SYS_STATUS_SENSOR_GPS;
     }
 #if OPTFLOW == ENABLED
@@ -320,7 +250,7 @@ void Plane::update_sensor_status_flags(void)
     if (!ins.get_accel_health_all()) {
         control_sensors_health &= ~MAV_SYS_STATUS_SENSOR_3D_ACCEL;
     }
-    if (airspeed.healthy()) {
+    if (airspeed.all_healthy()) {
         control_sensors_health |= MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE;
     }
 #if GEOFENCE_ENABLED
@@ -376,7 +306,7 @@ void Plane::update_sensor_status_flags(void)
         control_sensors_health &= ~(MAV_SYS_STATUS_SENSOR_3D_GYRO | MAV_SYS_STATUS_SENSOR_3D_ACCEL);
     }
 
-    if (plane.failsafe.low_battery) {
+    if (!plane.battery.healthy() || plane.battery.has_failsafed()) {
         control_sensors_health &= ~MAV_SYS_STATUS_SENSOR_BATTERY;
     }
 

@@ -107,7 +107,7 @@ popd
 githash=$(cd APM && git rev-parse HEAD)
 hdate=$(date +"%Y-%m-%d-%H:%m")
 
-for d in ArduPlane; do
+for d in ArduPlane ArduCopter APMrover2 AntennaTracker; do
     pushd APM/$d
     rm -rf ../../buildlogs/$d.build
     (date && TMPDIR=../../buildlogs make) > ../../buildlogs/$d.txt 2>&1
@@ -132,9 +132,6 @@ echo $githash > "buildlogs/history/$hdate/githash.txt"
 (cd APM && Tools/scripts/build_docs.sh)
 
 killall -9 JSBSim || /bin/true
-
-# setup for libiio on Parrot boards
-export PKG_CONFIG_PATH=$HOME/APM/ParrotLib/lib
 
 # raise core limit
 ulimit -c 10000000

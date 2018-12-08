@@ -70,7 +70,7 @@ public:
     }
     
 private:
-    static const uint8_t num_buses = 2;
+    static const uint8_t num_buses = 3;
     static DeviceBus businfo[num_buses];
     
     uint8_t _busnum;
@@ -90,7 +90,24 @@ public:
         return static_cast<I2CDeviceManager*>(i2c_mgr);
     }
 
-    AP_HAL::OwnPtr<AP_HAL::I2CDevice> get_device(uint8_t bus, uint8_t address) override;
+    AP_HAL::OwnPtr<AP_HAL::I2CDevice> get_device(uint8_t bus, uint8_t address,
+                                                 uint32_t bus_clock=400000,
+                                                 bool use_smbus = false,
+                                                 uint32_t timeout_ms=4) override;
+    /*
+      get mask of bus numbers for all configured I2C buses
+     */
+    uint32_t get_bus_mask(void) const override;
+
+    /*
+      get mask of bus numbers for all configured external I2C buses
+     */
+    uint32_t get_bus_mask_external(void) const override;
+
+    /*
+      get mask of bus numbers for all configured internal I2C buses
+     */
+    uint32_t get_bus_mask_internal(void) const override;
 };
 
 }

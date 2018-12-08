@@ -72,6 +72,24 @@ class px4_copy(Task.Task):
     def __str__(self):
         return self.outputs[0].path_from(self.generator.bld.bldnode)
 
+class create_abin(Task.Task):
+    '''create an abin file - used for uploading to a skyviper'''
+    color = 'CYAN'
+
+    def run(self):
+        from subprocess import call
+        elf_name = self.inputs[0].abspath()
+        bin_name = elf_name + ".bin"
+        abin_name = self.outputs[0].abspath()
+        call(['arm-none-eabi-objcopy', '-Obinary', elf_name, bin_name])
+        call(['Tools/scripts/make_abin.sh', bin_name, abin_name])
+
+    def keyword(self):
+        return "Creating abin for %s to" % self.inputs[0].name
+
+    def __str__(self):
+        return self.outputs[0].path_from(self.generator.bld.bldnode)
+
 class px4_add_git_hashes(Task.Task):
     run_str = '${PYTHON} ${PX4_ADD_GIT_HASHES} --ardupilot ${PX4_APM_ROOT} --px4 ${PX4_ROOT} --nuttx ${PX4_NUTTX_ROOT} ${SRC} ${TGT}'
     color = 'CYAN'
@@ -159,6 +177,11 @@ def px4_firmware(self):
     cp_elf.set_run_after(fw_task)
     _firmware_semaphorish_tasks.append(cp_elf)
 
+    if self.env.BUILD_ABIN:
+        fw_abin_dest = self.bld.bldnode.make_node(os.path.join(self.program_dir, self.program_name + '.abin'))
+        create_abin = self.create_task('create_abin', fw_elf, fw_abin_dest)
+        create_abin.set_run_after(fw_task)
+
     self.build_summary = dict(
         target=self.name,
         binary=fw_elf_dest.path_from(self.bld.bldnode),
@@ -188,13 +211,18 @@ def _px4_taskgen(bld, **kw):
 @feature('_px4_romfs')
 def _process_romfs(self):
     bld = self.bld
+
+    board_name = bld.env.get_flat('PX4_BOARD_NAME')
+
     file_list = [
         'init.d/rc.APM',
         'init.d/rc.error',
-        'init.d/rcS',
-        'tones/startup',
-        (bld.env.PX4_BOOTLOADER, 'bootloader/fmu_bl.bin'),
+        (bld.env.PX4_RC_S_SCRIPT, 'init.d/rcS'),
+        'tones/startup'
     ]
+    if board_name != "px4fmu-v2":
+        # we omit the bootloader on px4-v2 to save flash space
+        file_list.append((bld.env.PX4_BOOTLOADER, 'bootloader/fmu_bl.bin'))
 
     if bld.env.PX4_BOARD_RC:
         board_rc = 'init.d/rc.%s' % bld.env.get_flat('PX4_BOARD_NAME')
@@ -246,7 +274,7 @@ def configure(cfg):
     # stop using the make-based build system
     env.PX4_ROMFS_SRC = 'mk/PX4/ROMFS'
     env.PX4_ROMFS_BLD = 'px4-extra-files/ROMFS'
-    env.PX4_BOOTLOADER = '/../bootloader/%s' % env.PX4_BOOTLOADER_NAME
+    env.PX4_BOOTLOADER = '/../../../Tools/bootloaders/%s' % env.PX4_BOOTLOADER_NAME
 
     env.PX4_ADD_GIT_HASHES = srcpath('Tools/scripts/add_git_hashes.py')
     env.PX4_APM_ROOT = srcpath('')

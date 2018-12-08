@@ -22,10 +22,24 @@
 #include <AP_Vehicle/AP_Vehicle.h>
 #include "SRV_Channel.h"
 
+#if HAL_WITH_UAVCAN
+#include <AP_UAVCAN/AP_UAVCAN.h>
+#include <AP_BoardConfig/AP_BoardConfig_CAN.h>
+#endif
+
 extern const AP_HAL::HAL& hal;
 
 SRV_Channel *SRV_Channels::channels;
 SRV_Channels *SRV_Channels::instance;
+AP_Volz_Protocol *SRV_Channels::volz_ptr;
+AP_SBusOut *SRV_Channels::sbus_ptr;
+
+#if HAL_SUPPORT_RCOUT_SERIAL
+AP_BLHeli *SRV_Channels::blheli_ptr;
+#endif
+
+uint16_t SRV_Channels::disabled_mask;
+
 bool SRV_Channels::disabled_passthrough;
 bool SRV_Channels::initialised;
 Bitmask SRV_Channels::function_mask{SRV_Channel::k_nr_aux_servo_functions};
@@ -111,6 +125,20 @@ const AP_Param::GroupInfo SRV_Channels::var_info[] = {
     // @Units: Hz
     AP_GROUPINFO("_RATE",  18, SRV_Channels, default_rate, 50),
 
+    // @Group: _VOLZ_
+    // @Path: ../AP_Volz_Protocol/AP_Volz_Protocol.cpp
+    AP_SUBGROUPINFO(volz, "_VOLZ_",  19, SRV_Channels, AP_Volz_Protocol),
+
+    // @Group: _SBUS_
+    // @Path: ../AP_SBusOut/AP_SBusOut.cpp
+    AP_SUBGROUPINFO(sbus, "_SBUS_",  20, SRV_Channels, AP_SBusOut),
+
+#if HAL_SUPPORT_RCOUT_SERIAL
+    // @Group: _BLH_
+    // @Path: ../AP_BLHeli/AP_BLHeli.cpp
+    AP_SUBGROUPINFO(blheli, "_BLH_",  21, SRV_Channels, AP_BLHeli),
+#endif
+    
     AP_GROUPEND
 };
 
@@ -129,6 +157,12 @@ SRV_Channels::SRV_Channels(void)
     for (uint8_t i=0; i<NUM_SERVO_CHANNELS; i++) {
         channels[i].ch_num = i;
     }
+
+    volz_ptr = &volz;
+    sbus_ptr = &sbus;
+#if HAL_SUPPORT_RCOUT_SERIAL
+    blheli_ptr = &blheli;
+#endif
 }
 
 /*
@@ -144,17 +178,12 @@ void SRV_Channels::save_trim(void)
     trimmed_mask = 0;
 }
 
-void SRV_Channels::output_trim_all(void)
-{
-    for (uint8_t i=0; i<NUM_SERVO_CHANNELS; i++) {
-        channels[i].set_output_pwm(channels[i].servo_trim);
-    }
-}
-
-void SRV_Channels::setup_failsafe_trim_all(void)
+void SRV_Channels::setup_failsafe_trim_all_non_motors(void)
 {
     for (uint8_t i = 0; i < NUM_SERVO_CHANNELS; i++) {
-        hal.rcout->set_failsafe_pwm(1U<<channels[i].ch_num, channels[i].servo_trim);
+        if (!SRV_Channel::is_motor(channels[i].get_function())) {
+            hal.rcout->set_failsafe_pwm(1U<<channels[i].ch_num, channels[i].servo_trim);
+        }
     }
 }
 
@@ -174,4 +203,43 @@ void SRV_Channels::set_output_pwm_chan(uint8_t chan, uint16_t value)
     if (chan < NUM_SERVO_CHANNELS) {
         channels[chan].set_output_pwm(value);
     }
+}
+
+/*
+  wrapper around hal.rcout->cork()
+ */
+void SRV_Channels::cork()
+{
+    hal.rcout->cork();
+}
+
+/*
+  wrapper around hal.rcout->push()
+ */
+void SRV_Channels::push()
+{
+    hal.rcout->push();
+    
+    // give volz library a chance to update
+    volz_ptr->update();
+
+    // give sbus library a chance to update
+    sbus_ptr->update();
+
+#if HAL_SUPPORT_RCOUT_SERIAL
+    // give blheli telemetry a chance to update
+    blheli_ptr->update_telemetry();
+#endif
+
+#if HAL_WITH_UAVCAN
+    // push outputs to UAVCAN
+    uint8_t can_num_ifaces = AP_BoardConfig_CAN::get_can_num_ifaces();
+    for (uint8_t i = 0; i < MAX_NUMBER_OF_CAN_DRIVERS && i < can_num_ifaces; i++) {
+        AP_UAVCAN *ap_uavcan = AP_UAVCAN::get_uavcan(i);
+        if (ap_uavcan == nullptr) {
+            continue;
+        }
+        ap_uavcan->SRV_push_servos();
+    }
+#endif // HAL_WITH_UAVCAN
 }

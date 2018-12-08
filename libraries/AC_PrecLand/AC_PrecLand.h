@@ -2,11 +2,11 @@
 
 #include <AP_Common/AP_Common.h>
 #include <AP_Math/AP_Math.h>
-#include <AP_InertialNav/AP_InertialNav.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <stdint.h>
 #include "PosVelEKF.h"
 #include <AP_Buffer/AP_Buffer.h>
+#include <AP_AHRS/AP_AHRS.h>
 
 // declare backend classes
 class AC_PrecLand_Backend;
@@ -25,6 +25,11 @@ class AC_PrecLand
     friend class AC_PrecLand_SITL;
 
 public:
+    AC_PrecLand(const AP_AHRS_NavEKF& ahrs);
+
+    /* Do not allow copies */
+    AC_PrecLand(const AC_PrecLand &other) = delete;
+    AC_PrecLand &operator=(const AC_PrecLand&) = delete;
 
     // precision landing behaviours (held in PRECLAND_ENABLED parameter)
     enum PrecLandBehaviour {
@@ -41,9 +46,6 @@ public:
         PRECLAND_TYPE_SITL_GAZEBO,
         PRECLAND_TYPE_SITL,
     };
-
-    // constructor
-    AC_PrecLand(const AP_AHRS& ahrs, const AP_InertialNav& inav);
 
     // perform any required initialisation of landing controllers
     void init();
@@ -101,8 +103,7 @@ private:
     void run_output_prediction();
 
     // references to inertial nav and ahrs libraries
-    const AP_AHRS&              _ahrs;
-    const AP_InertialNav&       _inav;
+    const AP_AHRS_NavEKF&       _ahrs;
 
     // parameters
     AP_Int8                     _enabled;           // enabled/disabled and behaviour

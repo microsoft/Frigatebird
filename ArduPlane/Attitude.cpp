@@ -17,7 +17,19 @@ float Plane::get_speed_scaler(void)
         } else {
             speed_scaler = 2.0;
         }
-        speed_scaler = constrain_float(speed_scaler, 0.5f, 2.0f);
+        // ensure we have scaling over the full configured airspeed
+        float scale_min = MIN(0.5, (0.5 * aparm.airspeed_min) / g.scaling_speed);
+        float scale_max = MAX(2.0, (1.5 * aparm.airspeed_max) / g.scaling_speed);
+        speed_scaler = constrain_float(speed_scaler, scale_min, scale_max);
+
+        if (quadplane.in_vtol_mode() && hal.util->get_soft_armed()) {
+            // when in VTOL modes limit surface movement at low speed to prevent instability
+            float threshold = aparm.airspeed_min * 0.5;
+            if (aspeed < threshold) {
+                float new_scaler = linear_interpolate(0, g.scaling_speed / threshold, aspeed, 0, threshold);
+                speed_scaler = MIN(speed_scaler, new_scaler);
+            }
+        }
     } else {
         if (SRV_Channels::get_output_scaled(SRV_Channel::k_throttle) > 0) {
             speed_scaler = 0.5f + ((float)THROTTLE_CRUISE / SRV_Channels::get_output_scaled(SRV_Channel::k_throttle) / 2.0f);                 // First order taylor expansion of square root
@@ -49,7 +61,7 @@ bool Plane::stick_mixing_enabled(void)
         }
     }
 
-    if (failsafe.ch3_failsafe && g.short_fs_action == 2) {
+    if (failsafe.rc_failsafe && g.fs_action_short == FS_ACTION_SHORT_FBWA) {
         // don't do stick mixing in FBWA glide mode
         return false;
     }
@@ -364,15 +376,25 @@ void Plane::stabilize()
     }
     float speed_scaler = get_speed_scaler();
 
+    if (quadplane.in_tailsitter_vtol_transition()) {
+        /*
+          during transition to vtol in a tailsitter try to raise the
+          nose rapidly while keeping the wings level
+         */
+        nav_pitch_cd = constrain_float((quadplane.tailsitter.transition_angle+5)*100, 5500, 8500),
+        nav_roll_cd = 0;
+    }
+    
     if (control_mode == TRAINING) {
         stabilize_training(speed_scaler);
     } else if (control_mode == ACRO) {
         stabilize_acro(speed_scaler);
-    } else if (control_mode == QSTABILIZE ||
-               control_mode == QHOVER ||
-               control_mode == QLOITER ||
-               control_mode == QLAND ||
-               control_mode == QRTL) {
+    } else if ((control_mode == QSTABILIZE ||
+                control_mode == QHOVER ||
+                control_mode == QLOITER ||
+                control_mode == QLAND ||
+                control_mode == QRTL) &&
+               !quadplane.in_tailsitter_vtol_transition()) {
         quadplane.control_run();
     } else {
         if (g.stick_mixing == STICK_MIXING_FBW && control_mode != STABILIZE) {
@@ -663,6 +685,15 @@ void Plane::update_load_factor(void)
     }
     aerodynamic_load_factor = 1.0f / safe_sqrt(cosf(radians(demanded_roll)));
 
+    if (quadplane.in_transition() &&
+        (quadplane.options & QuadPlane::OPTION_LEVEL_TRANSITION)) {
+        /*
+          the user has asked for transitions to be kept level to
+          within LEVEL_ROLL_LIMIT
+         */
+        roll_limit_cd = MIN(roll_limit_cd, g.level_roll_limit*100);
+    }
+    
     if (!aparm.stall_prevention) {
         // stall prevention is disabled
         return;
@@ -677,7 +708,7 @@ void Plane::update_load_factor(void)
     }
        
 
-    float max_load_factor = smoothed_airspeed / aparm.airspeed_min;
+    float max_load_factor = smoothed_airspeed / MAX(aparm.airspeed_min, 1);
     if (max_load_factor <= 1) {
         // our airspeed is below the minimum airspeed. Limit roll to
         // 25 degrees

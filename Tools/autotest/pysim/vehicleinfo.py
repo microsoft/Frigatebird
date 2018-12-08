@@ -7,8 +7,107 @@ class VehicleInfo(object):
         extra_mavlink_cmds: extra parameters that will be passed to mavproxy
         """
         self.options = {
+    "ArduCopter": {
+        "default_frame": "quad",
+        "frames": {
+            # COPTER
+            "+": {
+                "waf_target": "bin/arducopter",
+                "default_params_filename": "default_params/copter.parm",
+            },
+            "quad": {
+                "model": "+",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": "default_params/copter.parm",
+            },
+            "X": {
+                "waf_target": "bin/arducopter",
+                "default_params_filename": "default_params/copter.parm",
+                # this param set FRAME doesn't actually work because mavproxy
+                # won't set a parameter unless it knows of it, and the
+                # param fetch happens asynchronously
+                "extra_mavlink_cmds": "param fetch frame; param set FRAME 1;",
+            },
+            "hexa": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter.parm",
+                                            "default_params/copter-hexa.parm" ],
+            },
+            "octa-quad": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter.parm",
+                                            "default_params/copter-octaquad.parm" ],
+            },
+            "octa": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter.parm",
+                                            "default_params/copter-octa.parm" ],
+            },
+            "tri": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter.parm",
+                                            "default_params/copter-tri.parm" ],
+            },
+            "y6": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter.parm",
+                                            "default_params/copter-y6.parm" ],
+            },
+            "dodeca-hexa": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter.parm",
+                                            "default_params/copter-dodecahexa.parm" ],
+            },
+            # SIM
+            "IrisRos": {
+                "waf_target": "bin/arducopter",
+                "default_params_filename": "default_params/copter.parm",
+            },
+            "gazebo-iris": {
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter.parm",
+                                            "default_params/gazebo-iris.parm"],
+            },
+            # HELICOPTER
+            "heli": {
+                "make_target": "sitl-heli",
+                "waf_target": "bin/arducopter-heli",
+                "default_params_filename": "default_params/copter-heli.parm",
+            },
+            "heli-dual": {
+                "make_target": "sitl-heli-dual",
+                "waf_target": "bin/arducopter-heli",
+                "default_params_filename": ["default_params/copter-heli.parm",
+                                            "default_params/copter-heli-dual.parm"],
+            },
+            "heli-compound": {
+                "make_target": "sitl-heli-compound",
+                "waf_target": "bin/arducopter-heli",
+            },
+            "singlecopter": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": "default_params/copter-single.parm",
+            },
+            "coaxcopter": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter-single.parm",
+                                            "default_params/copter-coax.parm"],
+            },
+            "calibration": {
+                "extra_mavlink_cmds": "module load sitl_calibration;",
+            },
+        },
+    },
     "ArduPlane": {
-        "default_frame": "jsbsim",
+        "default_frame": "plane",
         "frames": {
             # PLANE
             "quadplane-tilttri": {
@@ -20,6 +119,11 @@ class VehicleInfo(object):
                 "make_target": "sitl",
                 "waf_target": "bin/arduplane",
                 "default_params_filename": "default_params/quadplane-tilttrivec.parm",
+            },
+            "quadplane-tilthvec": {
+                "make_target": "sitl",
+                "waf_target": "bin/arduplane",
+                "default_params_filename": ["default_params/plane.parm", "default_params/quadplane-tilthvec.parm"],
             },
             "quadplane-tri": {
                 "make_target": "sitl",
@@ -34,6 +138,10 @@ class VehicleInfo(object):
             "quadplane": {
                 "waf_target": "bin/arduplane",
                 "default_params_filename": "default_params/quadplane.parm",
+            },
+            "firefly": {
+                "waf_target": "bin/arduplane",
+                "default_params_filename": "default_params/firefly.parm",
             },
             "plane-elevon": {
                 "waf_target": "bin/arduplane",
@@ -71,6 +179,56 @@ class VehicleInfo(object):
             },
             "calibration": {
                 "extra_mavlink_cmds": "module load sitl_calibration;",
+            },
+        },
+    },
+    "APMrover2": {
+        "default_frame": "rover",
+        "frames": {
+            # ROVER
+            "rover": {
+                "waf_target": "bin/ardurover",
+                "default_params_filename": "default_params/rover.parm",
+            },
+            "rover-skid": {
+                "waf_target": "bin/ardurover",
+                "default_params_filename": ["default_params/rover.parm",
+                                            "default_params/rover-skid.parm"],
+            },
+            "balancebot": {
+                "waf_target": "bin/ardurover",
+                "default_params_filename": ["default_params/rover.parm",
+                                            "default_params/rover-skid.parm",
+                                            "default_params/balancebot.parm"],
+            },
+            "gazebo-rover": {
+                "waf_target": "bin/ardurover",
+                "default_params_filename": ["default_params/rover.parm",
+                                            "default_params/rover-skid.parm"],
+            },
+            "calibration": {
+                "extra_mavlink_cmds": "module load sitl_calibration;",
+            },
+        },
+    },
+    "ArduSub": {
+        "default_frame": "vectored",
+        "frames": {
+            "vectored": {
+                "waf_target": "bin/ardusub",
+                "default_params_filename": "default_params/sub.parm",
+            },
+            "gazebo-bluerov2": {
+                "waf_target": "bin/ardusub",
+                "default_params_filename": "default_params/sub.parm",
+            },
+        },
+    },
+    "AntennaTracker": {
+        "default_frame": "tracker",
+        "frames": {
+            "tracker": {
+                "waf_target": "bin/antennatracker",
             },
         },
     },

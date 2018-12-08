@@ -433,7 +433,7 @@ SoaringController::SoaringController(AP_AHRS &ahrs, AP_SpdHgtControl &spdHgt, AP
     _ahrs(ahrs),
     _spdHgt(spdHgt),
     _aparm(parms),
-    _gps(ahrs.get_gps()),
+    _gps(AP::gps()),
     _new_data(false),
     _loiter_rad(parms.loiter_radius),
     _throttle_suppressed(true),
@@ -572,7 +572,7 @@ SoaringController::init_ekf()
     const MatrixN<float, 4> q{ init_q };
     const float init_p[4] = { INITIAL_STRENGTH_COVARIANCE, INITIAL_RADIUS_COVARIANCE, INITIAL_POSITION_COVARIANCE, INITIAL_POSITION_COVARIANCE };
     const MatrixN<float, 4> p{ init_p };
-    float ground_course = radians(_ahrs.get_gps().ground_course());
+    float ground_course = radians(AP::gps().ground_course());
     float head_sin = sinf(ground_course); //sinf(_ahrs.yaw);
     float head_cos = cosf(ground_course); //cosf(_ahrs.yaw);
 
@@ -776,7 +776,7 @@ bool SoaringController::update_vario()
     const uint32_t sched_rate_dt_ms = (1.0f / 50.0f) * 1e3;
     const uint32_t dropout_delay_ms = 1000;
     const uint32_t sched_jitter_ms = sched_rate_dt_ms * 3;
-    uint32_t time_since_last_gps_fix_ms = now * 1e-3 - _ahrs.get_gps().last_fix_time_ms();
+    uint32_t time_since_last_gps_fix_ms = now * 1e-3 - AP::gps().last_fix_time_ms();
     uint32_t time_since_last_vario_update_ms = (now - _prev_vario_update_time) * 1e-3;
     bool gps_drop_out = time_since_last_gps_fix_ms > dropout_delay_ms;
 
@@ -785,7 +785,7 @@ bool SoaringController::update_vario()
         || (now - _prev_vario_update_time) > (1.0f / rate_hz) * 1e6)
     {    
         float dt = (now - _prev_vario_update_time) * 1e-6;
-        //gcs().send_text(MAV_SEVERITY_INFO, "var: %f %u v0: %f  fix: %ums", dt, _update_rate_ms, _wind_corrected_gspd, AP_HAL::millis() - _ahrs.get_gps().last_fix_time_ms());
+        //gcs().send_text(MAV_SEVERITY_INFO, "var: %f %u v0: %f  fix: %ums", dt, _update_rate_ms, _wind_corrected_gspd, AP_HAL::millis() - AP::gps().last_fix_time_ms());
         _vario_updated = true;
         Location current_loc;
         get_position(current_loc);
@@ -861,7 +861,7 @@ bool SoaringController::update_vario()
         Vector3f wind = _ahrs.wind_estimate();
         get_wind_corrected_drift(&current_loc, &_prev_vario_update_location, &wind, &_dx_w, &_dy_w, &_dx, &_dy, &_gdx, &_gdy);
         
-        if (_dx == 0.0f && _dy == 0.0f)
+        if (is_zero(_dx) && is_zero(_dy))
         {
             _dx = 1e-6f;
             _dy = 1e-6f;
@@ -914,7 +914,7 @@ bool SoaringController::update_vario()
                                                (double)_dx,
                                                (double)_dy,
                                                (uint8_t)vario_type,
-                                               (double)_ahrs.get_ins().get_accel().z);
+                                               (double)AP::ins().get_accel().z);
         DataFlash_Class::instance()->Log_Write("VEKF", "TimeUS,x0,x1,x2,x3,p0,p1,p2,p3,wx0,wx1,wx2", "Qfffffffffff",
                                                AP_HAL::micros64(),
                                                (double)_ekf.X[0],
@@ -967,7 +967,7 @@ SoaringController::correct_netto_rate(int type, float climb_rate, float phi, flo
     else if (type == 2)
     {
         float netto_rate;
-        float az = fabsf(_ahrs.get_ins().get_accel().z);
+        float az = fabsf(AP::ins().get_accel().z);
         float n = az / GRAVITY_MSS;
         netto_rate = climb_rate - (poly_a * aspd * aspd + poly_b * aspd + poly_c) * powf(n, 1.5);
         return netto_rate;
@@ -1171,7 +1171,7 @@ SoaringController::get_position(Location& loc)
     {
         loc.lat = *((int32_t *)(&_debug_in[DBG_LAT]));
         loc.lng = *((int32_t *)(&_debug_in[DBG_LNG]));
-        loc.alt = (int32_t)(round(_debug_in[DBG_ALT] * 100));
+        loc.alt = (int32_t)(_debug_in[DBG_ALT] * 100);
     }
     else
     {

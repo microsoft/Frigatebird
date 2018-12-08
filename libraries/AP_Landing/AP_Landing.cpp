@@ -172,7 +172,7 @@ AP_Landing::AP_Landing(AP_Mission &_mission, AP_AHRS &_ahrs, AP_SpdHgtControl *_
 
 void AP_Landing::do_land(const AP_Mission::Mission_Command& cmd, const float relative_altitude)
 {
-    log(); // log old state so we get a nice transition from old to new here
+    Log(); // log old state so we get a nice transition from old to new here
 
     flags.commanded_go_around = false;
 
@@ -188,7 +188,7 @@ void AP_Landing::do_land(const AP_Mission::Mission_Command& cmd, const float rel
         break;
     }
 
-    log();
+    Log();
 }
 
 /*
@@ -216,7 +216,7 @@ bool AP_Landing::verify_land(const Location &prev_WP_loc, Location &next_WP_loc,
         success = true;
         break;
     }
-    log();
+    Log();
     return success;
 }
 
@@ -245,7 +245,7 @@ bool AP_Landing::verify_abort_landing(const Location &prev_WP_loc, Location &nex
          // else we're in AUTO with a stopped mission and handle_auto_mode() will set RTL
      }
 
-     log();
+     Log();
 
      // make sure to always return false so it leaves the mission index alone
      return false;
@@ -308,6 +308,7 @@ bool AP_Landing::is_on_approach(void) const
     case TYPE_STANDARD_GLIDE_SLOPE:
         return type_slope_is_on_approach();
     case TYPE_DEEPSTALL:
+        return deepstall.is_on_approach();
     default:
         return false;
     }
@@ -446,7 +447,7 @@ bool AP_Landing::restart_landing_sequence()
         update_flight_stage_fn();
     }
 
-    log();
+    Log();
     return success;
 }
 
@@ -546,16 +547,16 @@ bool AP_Landing::request_go_around(void)
         break;
     }
 
-    log();
+    Log();
     return success;
 }
 
 void AP_Landing::handle_flight_stage_change(const bool _in_landing_stage)
 {
-    log(); // log old value to plot discrete transitions
+    Log(); // log old value to plot discrete transitions
     flags.in_progress = _in_landing_stage;
     flags.commanded_go_around = false;
-    log();
+    Log();
 }
 
 /*
@@ -573,13 +574,15 @@ bool AP_Landing::is_complete(void) const
     }
 }
 
-void AP_Landing::log(void) const
+void AP_Landing::Log(void) const
 {
     switch (type) {
     case TYPE_STANDARD_GLIDE_SLOPE:
         type_slope_log();
         break;
     case TYPE_DEEPSTALL:
+        deepstall.Log();
+        break;
     default:
         break;
     }
@@ -619,5 +622,19 @@ bool AP_Landing::is_flying_forward(void) const
     case TYPE_STANDARD_GLIDE_SLOPE:
     default:
         return true;
+    }
+}
+
+/*
+ * attempt to terminate flight with an immediate landing
+ * returns true if the landing library can and is terminating the landing
+ */
+bool AP_Landing::terminate(void) {
+    switch (type) {
+    case TYPE_DEEPSTALL:
+        return deepstall.terminate();
+    case TYPE_STANDARD_GLIDE_SLOPE:
+    default:
+        return false;
     }
 }

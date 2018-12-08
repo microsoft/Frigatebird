@@ -15,6 +15,7 @@
 
 #include "AP_Proximity.h"
 #include "AP_Proximity_LightWareSF40C.h"
+#include "AP_Proximity_RPLidarA2.h"
 #include "AP_Proximity_TeraRangerTower.h"
 #include "AP_Proximity_RangeFinder.h"
 #include "AP_Proximity_MAV.h"
@@ -29,7 +30,7 @@ const AP_Param::GroupInfo AP_Proximity::var_info[] = {
     // @Param: _TYPE
     // @DisplayName: Proximity type
     // @Description: What type of proximity sensor is connected
-    // @Values: 0:None,1:LightWareSF40C,2:MAVLink,3:TeraRangerTower,4:RangeFinder
+    // @Values: 0:None,1:LightWareSF40C,2:MAVLink,3:TeraRangerTower,4:RangeFinder,5:RPLidarA2
     // @RebootRequired: True
     // @User: Standard
     AP_GROUPINFO("_TYPE",   1, AP_Proximity, _type[0], 0),
@@ -149,7 +150,7 @@ const AP_Param::GroupInfo AP_Proximity::var_info[] = {
     // @Param: 2_TYPE
     // @DisplayName: Second Proximity type
     // @Description: What type of proximity sensor is connected
-    // @Values: 0:None,1:LightWareSF40C,2:MAVLink,3:TeraRangerTower,4:RangeFinder
+    // @Values: 0:None,1:LightWareSF40C,2:MAVLink,3:TeraRangerTower,4:RangeFinder,5:RPLidarA2
     // @User: Advanced
     // @RebootRequired: True
     AP_GROUPINFO("2_TYPE", 16, AP_Proximity, _type[1], 0),
@@ -174,11 +175,15 @@ const AP_Param::GroupInfo AP_Proximity::var_info[] = {
 };
 
 AP_Proximity::AP_Proximity(AP_SerialManager &_serial_manager) :
-    primary_instance(0),
-    num_instances(0),
     serial_manager(_serial_manager)
 {
     AP_Param::setup_object_defaults(this, var_info);
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    if (_singleton != nullptr) {
+        AP_HAL::panic("AP_Proximity must be singleton");
+    }
+#endif // CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    _singleton = this;
 }
 
 // initialise the Proximity class. We do detection of attached sensors here
@@ -278,6 +283,13 @@ void AP_Proximity::detect_instance(uint8_t instance)
         if (AP_Proximity_LightWareSF40C::detect(serial_manager)) {
             state[instance].instance = instance;
             drivers[instance] = new AP_Proximity_LightWareSF40C(*this, state[instance], serial_manager);
+            return;
+        }
+    }
+    if (type == Proximity_Type_RPLidarA2) {
+        if (AP_Proximity_RPLidarA2::detect(serial_manager)) {
+            state[instance].instance = instance;
+            drivers[instance] = new AP_Proximity_RPLidarA2(*this, state[instance], serial_manager);
             return;
         }
     }
@@ -416,3 +428,26 @@ bool AP_Proximity::get_upward_distance(float &distance) const
 {
     return get_upward_distance(primary_instance, distance);
 }
+
+AP_Proximity::Proximity_Type AP_Proximity::get_type(uint8_t instance) const
+{
+    if (instance < PROXIMITY_MAX_INSTANCES) {
+        return (Proximity_Type)((uint8_t)_type[instance]);
+    }
+    return Proximity_Type_None;
+}
+
+bool AP_Proximity::sensor_present() const
+{
+    return get_status() != Proximity_NotConnected;
+}
+bool AP_Proximity::sensor_enabled() const
+{
+    return _type[primary_instance] != Proximity_Type_None;
+}
+bool AP_Proximity::sensor_failed() const
+{
+    return get_status() != Proximity_Good;
+}
+
+AP_Proximity *AP_Proximity::_singleton;

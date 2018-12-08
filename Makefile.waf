@@ -12,8 +12,6 @@ all: $(WAF_BINARY)
 
 $(WAF_BINARY):
 	@git submodule init && git submodule update
-	echo "Copying over a replacement ardupilotmega.xml file to odules/mavlink/message_definitions/v1.0/"
-	rsync --checksum ardupilotmega.xml modules/mavlink/message_definitions/v1.0/
 
 waf-%: $(WAF_BINARY)
 	@$(WAF) $*

@@ -65,7 +65,7 @@ POMDSoarAlgorithm::init_actions(bool mode)
 void
 POMDSoarAlgorithm::init_thermalling()
 {
-    float ground_course = radians(_sc->_ahrs.get_gps().ground_course());
+    float ground_course = radians(AP::gps().ground_course());
     float head_sin = sinf(ground_course);
     float head_cos = cosf(ground_course);
     float xprod = _sc->_ekf.X[3] * head_cos - _sc->_ekf.X[2] * head_sin;

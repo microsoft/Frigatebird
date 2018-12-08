@@ -83,6 +83,7 @@ const AP_Param::GroupInfo AP_Camera::var_info[] = {
     // @Description: pin number to use for save accurate camera feedback messages. If set to -1 then don't use a pin flag for this, otherwise this is a pin number which if held high after a picture trigger order, will save camera messages when camera really takes a picture. A universal camera hot shoe is needed. The pin should be held high for at least 2 milliseconds for reliable trigger detection. See also the CAM_FEEDBACK_POL option. If using AUX4 pin on a Pixhawk then a fast capture method is used that allows for the trigger time to be as short as one microsecond.
     // @Values: -1:Disabled,50:PX4 AUX1,51:PX4 AUX2,52:PX4 AUX3,53:PX4 AUX4(fast capture),54:PX4 AUX5,55:PX4 AUX6
     // @User: Standard
+    // @RebootRequired: True
     AP_GROUPINFO("FEEDBACK_PIN",  8, AP_Camera, _feedback_pin, AP_CAMERA_FEEDBACK_DEFAULT_FEEDBACK_PIN),
 
     // @Param: FEEDBACK_POL
@@ -92,6 +93,13 @@ const AP_Param::GroupInfo AP_Camera::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("FEEDBACK_POL",  9, AP_Camera, _feedback_polarity, 1),
     
+    // @Param: AUTO_ONLY
+    // @DisplayName: Distance-trigging in AUTO mode only
+    // @Description: When enabled, trigging by distance is done in AUTO mode only.
+    // @Values: 0:Always,1:Only when in AUTO
+    // @User: Standard
+    AP_GROUPINFO("AUTO_ONLY",  10, AP_Camera, _auto_mode_only, 0),
+
     AP_GROUPEND
 };
 
@@ -128,8 +136,7 @@ AP_Camera::relay_pic()
 
 /// single entry point to take pictures
 ///  set send_mavlink_msg to true to send DO_DIGICAM_CONTROL message to all components
-void
-AP_Camera::trigger_pic(bool send_mavlink_msg)
+void AP_Camera::trigger_pic()
 {
     setup_feedback_callback();
 
@@ -144,19 +151,7 @@ AP_Camera::trigger_pic(bool send_mavlink_msg)
         break;
     }
 
-    if (send_mavlink_msg) {
-        // create command long mavlink message
-        mavlink_command_long_t cmd_msg;
-        memset(&cmd_msg, 0, sizeof(cmd_msg));
-        cmd_msg.command = MAV_CMD_DO_DIGICAM_CONTROL;
-        cmd_msg.param5 = 1;
-        // create message
-        mavlink_message_t msg;
-        mavlink_msg_command_long_encode(0, 0, &msg, &cmd_msg);
-
-        // forward to all components
-        GCS_MAVLINK::send_to_components(&msg);
-    }
+    log_picture();
 }
 
 /// de-activate the trigger after some delay, but without using a delay() function
@@ -184,7 +179,7 @@ AP_Camera::trigger_pic_cleanup()
 
 /// decode deprecated MavLink message that controls camera.
 void
-AP_Camera::control_msg(mavlink_message_t* msg)
+AP_Camera::control_msg(const mavlink_message_t* msg)
 {
     __mavlink_digicam_control_t packet;
     mavlink_msg_digicam_control_decode(msg, &packet);
@@ -221,8 +216,7 @@ void AP_Camera::control(float session, float zoom_pos, float zoom_step, float fo
 {
     // take picture
     if (is_equal(shooting_cmd,1.0f)) {
-        trigger_pic(false);
-        log_picture();
+        trigger_pic();
     }
 
     mavlink_message_t msg;
@@ -258,13 +252,14 @@ void AP_Camera::send_feedback(mavlink_channel_t chan)
         altitude_rel = current_loc.alt - ahrs.get_home().alt;
     }
 
-    mavlink_msg_camera_feedback_send(chan, 
-        gps.time_epoch_usec(),
+    mavlink_msg_camera_feedback_send(
+        chan,
+        AP::gps().time_epoch_usec(),
         0, 0, _image_index,
         current_loc.lat, current_loc.lng,
-        altitude/100.0f, altitude_rel/100.0f,
-        ahrs.roll_sensor/100.0f, ahrs.pitch_sensor/100.0f, ahrs.yaw_sensor/100.0f,
-        0.0f,CAMERA_FEEDBACK_PHOTO);
+        altitude*1e-2f, altitude_rel*1e-2f,
+        ahrs.roll_sensor*1e-2f, ahrs.pitch_sensor*1e-2f, ahrs.yaw_sensor*1e-2f,
+        0.0f, CAMERA_FEEDBACK_PHOTO, _feedback_events);
 }
 
 
@@ -272,7 +267,7 @@ void AP_Camera::send_feedback(mavlink_channel_t chan)
 */
 void AP_Camera::update()
 {
-    if (gps.status() < AP_GPS::GPS_OK_FIX_3D) {
+    if (AP::gps().status() < AP_GPS::GPS_OK_FIX_3D) {
         return;
     }
 
@@ -293,8 +288,12 @@ void AP_Camera::update()
         return;
     }
 
-    if (_max_roll > 0 && labs(ahrs.roll_sensor/100) > _max_roll) {
+    if (_max_roll > 0 && fabsf(ahrs.roll_sensor*1e-2f) > _max_roll) {
         return;
+    }
+
+    if (_is_in_auto_mode != true && _auto_mode_only != 0) {
+            return;
     }
 
     uint32_t tnow = AP_HAL::millis();
@@ -313,17 +312,7 @@ void AP_Camera::update()
  */
 void AP_Camera::feedback_pin_timer(void)
 {
-    int8_t dpin = hal.gpio->analogPinToDigitalPin(_feedback_pin);
-    if (dpin == -1) {
-        return;
-    }
-    // ensure we are in input mode
-    hal.gpio->pinMode(dpin, HAL_GPIO_INPUT);
-
-    // enable pullup
-    hal.gpio->write(dpin, 1);
-
-    uint8_t pin_state = hal.gpio->read(dpin);
+    uint8_t pin_state = hal.gpio->read(_feedback_pin);
     uint8_t trigger_polarity = _feedback_polarity==0?0:1;
     if (pin_state == trigger_polarity &&
         _last_pin_state != trigger_polarity) {
@@ -335,7 +324,7 @@ void AP_Camera::feedback_pin_timer(void)
 /*
   check if camera has triggered
  */
-bool AP_Camera::check_trigger_pin(void)
+bool AP_Camera::check_feedback_pin(void)
 {
     if (_camera_triggered) {
         _camera_triggered = false;
@@ -374,27 +363,29 @@ void AP_Camera::setup_feedback_callback(void)
         int fd = open("/dev/px4fmu", 0);
         if (fd != -1) {
             if (ioctl(fd, PWM_SERVO_SET_MODE, PWM_SERVO_MODE_3PWM1CAP) != 0) {
-                gcs().send_text(MAV_SEVERITY_WARNING, "Camera: unable to setup 3PWM1CAP\n");
+                gcs().send_text(MAV_SEVERITY_WARNING, "Camera: unable to setup 3PWM1CAP");
                 close(fd);
                 goto failed;
             }   
             if (up_input_capture_set(3, _feedback_polarity==1?Rising:Falling, 0, capture_callback, this) != 0) {
-                gcs().send_text(MAV_SEVERITY_WARNING, "Camera: unable to setup timer capture\n");
+                gcs().send_text(MAV_SEVERITY_WARNING, "Camera: unable to setup timer capture");
                 close(fd);
                 goto failed;
             }
             close(fd);
             _timer_installed = true;
-            gcs().send_text(MAV_SEVERITY_WARNING, "Camera: setup fast trigger capture\n");
+            gcs().send_text(MAV_SEVERITY_WARNING, "Camera: setup fast trigger capture");
         }
     }
 failed:
 #endif // CONFIG_HAL_BOARD
 
-    if (!_timer_installed) {
-        // install a 1kHz timer to check feedback pin
-        hal.scheduler->register_timer_process(FUNCTOR_BIND_MEMBER(&AP_Camera::feedback_pin_timer, void));
-    }
+    hal.gpio->pinMode(_feedback_pin, HAL_GPIO_INPUT); // ensure we are in input mode
+    hal.gpio->write(_feedback_pin, 1);                // enable pullup
+
+    // install a 1kHz timer to check feedback pin
+    hal.scheduler->register_timer_process(FUNCTOR_BIND_MEMBER(&AP_Camera::feedback_pin_timer, void));
+
     _timer_installed = true;
 }
 
@@ -408,11 +399,11 @@ void AP_Camera::log_picture()
     if (!using_feedback_pin()) {
         gcs().send_message(MSG_CAMERA_FEEDBACK);
         if (df->should_log(log_camera_bit)) {
-            df->Log_Write_Camera(ahrs, gps, current_loc);
+            df->Log_Write_Camera(ahrs, current_loc);
         }
     } else {
         if (df->should_log(log_camera_bit)) {
-            df->Log_Write_Trigger(ahrs, gps, current_loc);
+            df->Log_Write_Trigger(ahrs, current_loc);
         }
     }
 }
@@ -420,8 +411,20 @@ void AP_Camera::log_picture()
 // take_picture - take a picture
 void AP_Camera::take_picture()
 {
-    trigger_pic(true);
-    log_picture();
+    // take a local picture:
+    trigger_pic();
+
+    // tell all of our components to take a picture:
+    mavlink_command_long_t cmd_msg;
+    memset(&cmd_msg, 0, sizeof(cmd_msg));
+    cmd_msg.command = MAV_CMD_DO_DIGICAM_CONTROL;
+    cmd_msg.param5 = 1;
+    // create message
+    mavlink_message_t msg;
+    mavlink_msg_command_long_encode(0, 0, &msg, &cmd_msg);
+
+    // forward to all components
+    GCS_MAVLINK::send_to_components(&msg);
 }
 
 /*
@@ -430,13 +433,26 @@ void AP_Camera::take_picture()
 void AP_Camera::update_trigger()
 {
     trigger_pic_cleanup();
-    if (check_trigger_pin()) {
+    if (check_feedback_pin()) {
+        _feedback_events++;
         gcs().send_message(MSG_CAMERA_FEEDBACK);
         DataFlash_Class *df = DataFlash_Class::instance();
         if (df != nullptr) {
             if (df->should_log(log_camera_bit)) {
-                df->Log_Write_Camera(ahrs, gps, current_loc);
+                df->Log_Write_Camera(ahrs, current_loc);
             }
         }
     }
+}
+
+// singleton instance
+AP_Camera *AP_Camera::_singleton;
+
+namespace AP {
+
+AP_Camera *camera()
+{
+    return AP_Camera::get_singleton();
+}
+
 }

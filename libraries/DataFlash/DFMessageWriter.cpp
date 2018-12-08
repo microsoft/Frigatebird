@@ -1,5 +1,9 @@
-#include "ap_version.h"
+#include "AP_Common/AP_FWVersion.h"
 #include "DFMessageWriter.h"
+
+#define FORCE_VERSION_H_INCLUDE
+#include "ap_version.h"
+#undef FORCE_VERSION_H_INCLUDE
 
 extern const AP_HAL::HAL& hal;
 
@@ -22,6 +26,9 @@ void DFMessageWriter_DFLogStart::reset()
 
     stage = ls_blockwriter_stage_init;
     next_format_to_send = 0;
+    _next_unit_to_send = 0;
+    _next_multiplier_to_send = 0;
+    _next_format_unit_to_send = 0;
     ap = AP_Param::first(&token, &type);
 }
 
@@ -30,7 +37,7 @@ void DFMessageWriter_DFLogStart::process()
     switch(stage) {
     case ls_blockwriter_stage_init:
         stage = ls_blockwriter_stage_formats;
-        // no break
+        FALLTHROUGH;
 
     case ls_blockwriter_stage_formats:
         // write log formats so the log is self-describing
@@ -42,7 +49,37 @@ void DFMessageWriter_DFLogStart::process()
         }
         _fmt_done = true;
         stage = ls_blockwriter_stage_parms;
-        // no break
+        FALLTHROUGH;
+
+    case ls_blockwriter_stage_units:
+        while (_next_unit_to_send < _dataflash_backend->num_units()) {
+            if (!_dataflash_backend->Log_Write_Unit(_dataflash_backend->unit(_next_unit_to_send))) {
+                return; // call me again!
+            }
+            _next_unit_to_send++;
+        }
+        stage = ls_blockwriter_stage_multipliers;
+        FALLTHROUGH;
+
+    case ls_blockwriter_stage_multipliers:
+        while (_next_multiplier_to_send < _dataflash_backend->num_multipliers()) {
+            if (!_dataflash_backend->Log_Write_Multiplier(_dataflash_backend->multiplier(_next_multiplier_to_send))) {
+                return; // call me again!
+            }
+            _next_multiplier_to_send++;
+        }
+        stage = ls_blockwriter_stage_units;
+        FALLTHROUGH;
+
+    case ls_blockwriter_stage_format_units:
+        while (_next_format_unit_to_send < _dataflash_backend->num_types()) {
+            if (!_dataflash_backend->Log_Write_Format_Units(_dataflash_backend->structure(_next_format_unit_to_send))) {
+                return; // call me again!
+            }
+            _next_format_unit_to_send++;
+        }
+        stage = ls_blockwriter_stage_parms;
+        FALLTHROUGH;
 
     case ls_blockwriter_stage_parms:
         while (ap) {
@@ -53,7 +90,7 @@ void DFMessageWriter_DFLogStart::process()
         }
 
         stage = ls_blockwriter_stage_sysinfo;
-        // no break
+        FALLTHROUGH;
 
     case ls_blockwriter_stage_sysinfo:
         _writesysinfo.process();
@@ -61,7 +98,7 @@ void DFMessageWriter_DFLogStart::process()
             return;
         }
         stage = ls_blockwriter_stage_write_entire_mission;
-        // no break
+        FALLTHROUGH;
 
     case ls_blockwriter_stage_write_entire_mission:
         _writeentiremission.process();
@@ -69,7 +106,7 @@ void DFMessageWriter_DFLogStart::process()
             return;
         }
         stage = ls_blockwriter_stage_vehicle_messages;
-        // no break
+        FALLTHROUGH;
 
     case ls_blockwriter_stage_vehicle_messages:
         // we guarantee 200 bytes of space for the vehicle startup
@@ -82,7 +119,7 @@ void DFMessageWriter_DFLogStart::process()
             (_dataflash_backend->vehicle_message_writer())();
         }
         stage = ls_blockwriter_stage_done;
-        // no break
+        FALLTHROUGH;
 
     case ls_blockwriter_stage_done:
         break;
@@ -104,27 +141,39 @@ void DFMessageWriter_DFLogStart::set_mission(const AP_Mission *mission)
 
 
 void DFMessageWriter_WriteSysInfo::process() {
+    const AP_FWVersion &fwver = AP::fwversion();
+
     switch(stage) {
 
     case ws_blockwriter_stage_init:
         stage = ws_blockwriter_stage_firmware_string;
-        // no break
+        FALLTHROUGH;
 
     case ws_blockwriter_stage_firmware_string:
-        if (! _dataflash_backend->Log_Write_Message(_firmware_string)) {
+        if (! _dataflash_backend->Log_Write_Message(fwver.fw_string)) {
             return; // call me again
         }
         stage = ws_blockwriter_stage_git_versions;
-        // no break
+        FALLTHROUGH;
 
     case ws_blockwriter_stage_git_versions:
-#if defined(PX4_GIT_VERSION) && defined(NUTTX_GIT_VERSION)
-        if (! _dataflash_backend->Log_Write_Message("PX4: " PX4_GIT_VERSION " NuttX: " NUTTX_GIT_VERSION)) {
-            return; // call me again
+        if (fwver.middleware_name && fwver.os_name) {
+            if (! _dataflash_backend->Log_Write_MessageF("%s: %s %s: %s",
+                                                        fwver.middleware_name,
+                                                        fwver.middleware_hash_str,
+                                                        fwver.os_name,
+                                                        fwver.os_hash_str)) {
+                return; // call me again
+            }
+        } else if (fwver.os_name) {
+            if (! _dataflash_backend->Log_Write_MessageF("%s: %s",
+                                                        fwver.os_name,
+                                                        fwver.os_hash_str)) {
+                return; // call me again
+            }
         }
-#endif
         stage = ws_blockwriter_stage_system_id;
-        // no break
+        FALLTHROUGH;
 
     case ws_blockwriter_stage_system_id:
         char sysid[40];
@@ -133,7 +182,6 @@ void DFMessageWriter_WriteSysInfo::process() {
                 return; // call me again
             }
         }
-        // no break
     }
 
     _finished = true;  // all done!
@@ -149,14 +197,14 @@ void DFMessageWriter_WriteEntireMission::process() {
         } else {
             stage = em_blockwriter_stage_write_new_mission_message;
         }
-        // no break
+        FALLTHROUGH;
 
     case em_blockwriter_stage_write_new_mission_message:
         if (! _dataflash_backend->Log_Write_Message("New mission")) {
             return; // call me again
         }
         stage = em_blockwriter_stage_write_mission_items;
-        // no break
+        FALLTHROUGH;
 
     case em_blockwriter_stage_write_mission_items:
         AP_Mission::Mission_Command cmd;
@@ -171,7 +219,7 @@ void DFMessageWriter_WriteEntireMission::process() {
             _mission_number_to_send++;
         }
         stage = em_blockwriter_stage_done;
-        // no break
+        FALLTHROUGH;
 
     case em_blockwriter_stage_done:
         break;

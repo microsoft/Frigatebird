@@ -27,8 +27,7 @@ namespace SITL {
 
 SITL *_sitl;
 
-ADSB::ADSB(const struct sitl_fdm &_fdm, const char *_home_str) :
-    fdm(_fdm)
+ADSB::ADSB(const struct sitl_fdm &_fdm, const char *_home_str)
 {
     float yaw_degrees;
     Aircraft::parse_home(_home_str, home, yaw_degrees);
@@ -74,7 +73,7 @@ void ADSB_Vehicle::update(float delta_t)
 void ADSB::update(void)
 {
     if (_sitl == nullptr) {
-        _sitl = (SITL *)AP_Param::find_object("SIM_");
+        _sitl = AP::sitl();
         return;
     } else if (_sitl->adsb_plane_count <= 0) {
         return;

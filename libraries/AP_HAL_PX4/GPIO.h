@@ -16,12 +16,20 @@
  */
 #define PX4_GPIO_FMU_SERVO_PIN(n)       (n+50)
 
-#if CONFIG_HAL_BOARD == HAL_BOARD_PX4
- # define HAL_GPIO_A_LED_PIN        27
- # define HAL_GPIO_B_LED_PIN        26
- # define HAL_GPIO_C_LED_PIN        25
- # define HAL_GPIO_LED_ON           LOW
- # define HAL_GPIO_LED_OFF          HIGH
+#ifndef HAL_GPIO_A_LED_PIN
+#define HAL_GPIO_A_LED_PIN        27
+#endif
+#ifndef HAL_GPIO_B_LED_PIN
+#define HAL_GPIO_B_LED_PIN        26
+#endif
+#ifndef HAL_GPIO_C_LED_PIN
+#define HAL_GPIO_C_LED_PIN        25
+#endif
+#ifndef HAL_GPIO_LED_ON
+#define HAL_GPIO_LED_ON           0
+#endif
+#ifndef HAL_GPIO_LED_OFF
+#define HAL_GPIO_LED_OFF          1
 #endif
 
 class PX4::PX4GPIO : public AP_HAL::GPIO {
@@ -29,7 +37,6 @@ public:
     PX4GPIO();
     void    init() override;
     void    pinMode(uint8_t pin, uint8_t output) override;
-    int8_t  analogPinToDigitalPin(uint8_t pin) override;
     uint8_t read(uint8_t pin) override;
     void    write(uint8_t pin, uint8_t value) override;
     void    toggle(uint8_t pin) override;
@@ -48,7 +55,6 @@ public:
 
 private:
     int _led_fd = -1;
-    int _tone_alarm_fd = -1;
     int _gpio_fmu_fd = -1;
     int _gpio_io_fd = -1;
     bool _usb_connected = false;

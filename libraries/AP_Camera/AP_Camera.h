@@ -31,22 +31,28 @@
 class AP_Camera {
 
 public:
-    /// Constructor
-    ///
-    AP_Camera(AP_Relay *obj_relay, uint32_t _log_camera_bit, const struct Location &_loc, const AP_GPS &_gps, const AP_AHRS &_ahrs) :
-        _trigger_counter(0),    // count of number of cycles shutter has been held open
-        _image_index(0),
-        log_camera_bit(_log_camera_bit),
-        current_loc(_loc),
-        gps(_gps),
-        ahrs(_ahrs)
+    AP_Camera(AP_Relay *obj_relay, uint32_t _log_camera_bit, const struct Location &_loc, const AP_AHRS &_ahrs)
+        : log_camera_bit(_log_camera_bit)
+        , current_loc(_loc)
+        , ahrs(_ahrs)
     {
-		AP_Param::setup_object_defaults(this, var_info);
+        AP_Param::setup_object_defaults(this, var_info);
         _apm_relay = obj_relay;
+        _singleton = this;
+    }
+
+    /* Do not allow copies */
+    AP_Camera(const AP_Camera &other) = delete;
+    AP_Camera &operator=(const AP_Camera&) = delete;
+
+    // get singleton instance
+    static AP_Camera *get_singleton()
+    {
+        return _singleton;
     }
 
     // MAVLink methods
-    void            control_msg(mavlink_message_t* msg);
+    void            control_msg(const mavlink_message_t* msg);
     void            send_feedback(mavlink_channel_t chan);
 
     // Command processing
@@ -67,7 +73,13 @@ public:
 
     static const struct AP_Param::GroupInfo        var_info[];
 
+    // set if vehicle is in AUTO mode
+    void set_is_auto_mode(bool enable) { _is_in_auto_mode = enable; }
+
 private:
+
+    static AP_Camera *_singleton;
+
     AP_Int8         _trigger_type;      // 0:Servo,1:Relay
     AP_Int8         _trigger_duration;  // duration in 10ths of a second that the camera shutter is held open
     AP_Int8         _relay_on;          // relay value to trigger camera
@@ -75,6 +87,8 @@ private:
     AP_Int16        _servo_off_pwm;     // PWM value to move servo to when shutter is deactivated
     uint8_t         _trigger_counter;   // count of number of cycles shutter has been held open
     AP_Relay       *_apm_relay;         // pointer to relay object from the base class Relay.
+    AP_Int8         _auto_mode_only;    // if 1: trigger by distance only if in AUTO mode.
+    bool            _is_in_auto_mode;   // true if in AUTO mode
 
     void            servo_pic();        // Servo operated camera
     void            relay_pic();        // basic relay activation
@@ -91,6 +105,7 @@ private:
     uint32_t        _last_photo_time;   // last time a photo was taken
     struct Location _last_location;
     uint16_t        _image_index;       // number of pictures taken since boot
+    uint16_t        _feedback_events;   // number of feedback events since boot
 
     // pin number for accurate camera feedback messages
     AP_Int8         _feedback_pin;
@@ -105,21 +120,23 @@ private:
 
     uint32_t log_camera_bit;
     const struct Location &current_loc;
-    const AP_GPS &gps;
     const AP_AHRS &ahrs;
 
-    // single entry point to take pictures
-    //  set send_mavlink_msg to true to send DO_DIGICAM_CONTROL message to all components
-    void            trigger_pic(bool send_mavlink_msg);
+    // entry point to trip local shutter (e.g. by relay or servo)
+    void trigger_pic();
 
     // de-activate the trigger after some delay, but without using a delay() function
     // should be called at 50hz from main program
     void trigger_pic_cleanup();
 
-    // check if trigger pin has fired
-    bool check_trigger_pin(void);
+    // check if feedback pin has fired
+    bool check_feedback_pin(void);
 
     // return true if we are using a feedback pin
     bool using_feedback_pin(void) const { return _feedback_pin > 0; }
 
+};
+
+namespace AP {
+AP_Camera *camera();
 };

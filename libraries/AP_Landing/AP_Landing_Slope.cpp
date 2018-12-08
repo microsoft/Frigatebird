@@ -96,18 +96,18 @@ bool AP_Landing::type_slope_verify_land(const Location &prev_WP_loc, Location &n
         if (type_slope_stage != SLOPE_STAGE_FINAL) {
             type_slope_flags.post_stats = true;
             if (is_flying && (AP_HAL::millis()-last_flying_ms) > 3000) {
-                gcs().send_text(MAV_SEVERITY_CRITICAL, "Flare crash detected: speed=%.1f", (double)ahrs.get_gps().ground_speed());
+                gcs().send_text(MAV_SEVERITY_CRITICAL, "Flare crash detected: speed=%.1f", (double)AP::gps().ground_speed());
             } else {
                 gcs().send_text(MAV_SEVERITY_INFO, "Flare %.1fm sink=%.2f speed=%.1f dist=%.1f",
                                   (double)height, (double)sink_rate,
-                                  (double)ahrs.get_gps().ground_speed(),
+                                  (double)AP::gps().ground_speed(),
                                   (double)get_distance(current_loc, next_WP_loc));
             }
             type_slope_stage = SLOPE_STAGE_FINAL;
         }
 
 
-        if (ahrs.get_gps().ground_speed() < 3) {
+        if (AP::gps().ground_speed() < 3) {
             // reload any airspeed or groundspeed parameters that may have
             // been set for landing. We don't do this till ground
             // speed drops below 3.0 m/s as otherwise we will change
@@ -191,8 +191,8 @@ void AP_Landing::type_slope_adjust_landing_slope_for_rangefinder_bump(AP_Vehicle
         // offset and "perfect" slope.
 
         // calculate projected slope with projected alt
-        float new_slope_deg = degrees(atan(slope));
-        float initial_slope_deg = degrees(atan(initial_slope));
+        float new_slope_deg = degrees(atanf(slope));
+        float initial_slope_deg = degrees(atanf(initial_slope));
 
         // is projected slope too steep?
         if (new_slope_deg - initial_slope_deg > slope_recalc_steep_threshold_to_abort) {
@@ -201,7 +201,7 @@ void AP_Landing::type_slope_adjust_landing_slope_for_rangefinder_bump(AP_Vehicle
             alt_offset = rangefinder_state.correction;
             flags.commanded_go_around = true;
             type_slope_flags.has_aborted_due_to_slope_recalc = true; // only allow this once.
-            log();
+            Log();
         }
     }
 }

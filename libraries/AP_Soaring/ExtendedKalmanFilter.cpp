@@ -1,4 +1,4 @@
-﻿#include "ExtendedKalmanFilter.h"
+#include "ExtendedKalmanFilter.h"
 #include "AP_Math/matrixN.h"
 #include <AP_HAL/AP_HAL.h>
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
@@ -101,6 +101,7 @@ void ExtendedKalmanFilter::update(float z, float Vx, float Vy)
 	P(1, 1) += Q(1, 1);
 	P(2, 2) += Q(2, 2);
 	P(3, 3) += Q(3, 3);
+
     // What measurement do we expect to receive in the estimated
     // state
     // LINE 37
@@ -135,5 +136,4 @@ void ExtendedKalmanFilter::update(float z, float Vx, float Vy)
 		hal.console->printf("ExtendedKalmanFilter::update(): warning: error on restoring floating exception mask\n");
 	}
 #endif
-
 }

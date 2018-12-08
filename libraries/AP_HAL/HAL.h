@@ -1,5 +1,7 @@
 #pragma once
 
+class AP_Param;
+
 #include "AP_HAL_Namespace.h"
 
 #include "AnalogIn.h"
@@ -15,6 +17,12 @@
 #include "CAN.h"
 #endif
 
+
+#if defined(HAL_NEEDS_PARAM_HELPER)
+#include <AP_Param/AP_Param.h>
+class AP_Param_Helper;
+#endif
+
 class AP_HAL::HAL {
 public:
     HAL(AP_HAL::UARTDriver* _uartA, // console
@@ -23,6 +31,7 @@ public:
         AP_HAL::UARTDriver* _uartD, // telem2
         AP_HAL::UARTDriver* _uartE, // 2nd GPS
         AP_HAL::UARTDriver* _uartF, // extra1
+        AP_HAL::UARTDriver* _uartG, // extra2
         AP_HAL::I2CDeviceManager* _i2c_mgr,
         AP_HAL::SPIDeviceManager* _spi,
         AP_HAL::AnalogIn*   _analogin,
@@ -46,6 +55,7 @@ public:
         uartD(_uartD),
         uartE(_uartE),
         uartF(_uartF),
+        uartG(_uartG),
         i2c_mgr(_i2c_mgr),
         spi(_spi),
         analogin(_analogin),
@@ -95,6 +105,7 @@ public:
     AP_HAL::UARTDriver* uartD;
     AP_HAL::UARTDriver* uartE;
     AP_HAL::UARTDriver* uartF;
+    AP_HAL::UARTDriver* uartG;
     AP_HAL::I2CDeviceManager* i2c_mgr;
     AP_HAL::SPIDeviceManager* spi;
     AP_HAL::AnalogIn*   analogin;

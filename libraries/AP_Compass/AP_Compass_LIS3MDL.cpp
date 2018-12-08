@@ -123,7 +123,7 @@ bool AP_Compass_LIS3MDL::init()
     dev->set_device_type(DEVTYPE_LIS3MDL);
     set_dev_id(compass_instance, dev->get_bus_id());
 
-    // call timer() at 155Hz
+    // call timer() at 80Hz
     dev->register_periodic_callback(1000000U/80U,
                                     FUNCTOR_BIND_MEMBER(&AP_Compass_LIS3MDL::timer, void));
 
@@ -164,7 +164,7 @@ void AP_Compass_LIS3MDL::timer()
     rotate_field(field, compass_instance);
 
     /* publish raw_field (uncorrected point sample) for calibration use */
-    publish_raw_field(field, AP_HAL::micros(), compass_instance);
+    publish_raw_field(field, compass_instance);
 
     /* correct raw_field for known errors */
     correct_field(field, compass_instance);

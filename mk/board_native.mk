@@ -25,7 +25,7 @@ DEFINES        +=   -DSKETCH=\"$(SKETCH)\" -DSKETCHNAME="\"$(SKETCH)\"" -DSKETCH
 DEFINES        +=   $(EXTRAFLAGS)
 DEFINES        +=   -DCONFIG_HAL_BOARD=$(HAL_BOARD) -DCONFIG_HAL_BOARD_SUBTYPE=$(HAL_BOARD_SUBTYPE)
 WARNFLAGS       =   -Wall -Wextra -Wformat -Wshadow -Wpointer-arith -Wcast-align \
-                    -Wlogical-op -Wwrite-strings -Wformat=2 -Wno-unused-parameter -Wno-unknown-pragmas
+                    -Wlogical-op -Wwrite-strings -Wformat=2 -Wno-unused-parameter -Wno-unknown-pragmas -Wno-trigraphs
 WARNFLAGSCXX    = \
         -Wno-missing-field-initializers \
         -Wno-reorder \
@@ -36,8 +36,8 @@ WARNFLAGSCXX    = \
         -Werror=init-self \
         -Wfatal-errors \
         -Wundef \
-        -Wno-unknown-warning-option
-
+        -Wno-unknown-warning-option \
+        -Wno-trigraphs
 DEPFLAGS        =   -MD -MP -MT $@
 
 CXXOPTS         =   -ffunction-sections -fdata-sections -fno-exceptions -fsigned-char
@@ -132,9 +132,6 @@ print-%:
 # fetch dependency info from a previous build if any of it exists
 -include $(ALLDEPS)
 
-ifeq ($(HAL_BOARD_SUBTYPE),HAL_BOARD_SUBTYPE_LINUX_QFLIGHT)
-include $(MK_DIR)/board_qflight.mk
-else
 # Link the final object
 $(SKETCHELF): $(SKETCHOBJS) $(LIBOBJS)
 	@echo "Building $(SKETCHELF)"
@@ -142,7 +139,6 @@ $(SKETCHELF): $(SKETCHOBJS) $(LIBOBJS)
 	$(v)$(LD) $(LDFLAGS) -o $@ $(SKETCHOBJS) $(LIBOBJS) $(LIBS)
 	$(v)cp $(SKETCHELF) .
 	@echo "Firmware is in $(BUILDELF)"
-endif
 
 SKETCH_INCLUDES	=	$(SKETCHLIBINCLUDES) -I$(UAVCAN_DIRECTORY)/libuavcan/include -I$(UAVCAN_DIRECTORY)/libuavcan/include/dsdlc_generated
 SLIB_INCLUDES	=	-I$(dir $<)/utility $(SKETCHLIBINCLUDES) -I$(UAVCAN_DIRECTORY)/libuavcan/include -I$(UAVCAN_DIRECTORY)/libuavcan/include/dsdlc_generated

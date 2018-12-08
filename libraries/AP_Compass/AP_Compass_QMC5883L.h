@@ -28,6 +28,17 @@
 #define HAL_COMPASS_QMC5883L_I2C_ADDR 0x0D
 #endif
 
+/*
+  setup default orientations
+ */
+#ifndef HAL_COMPASS_QMC5883L_ORIENTATION_EXTERNAL
+#define HAL_COMPASS_QMC5883L_ORIENTATION_EXTERNAL ROTATION_ROLL_180
+#endif
+
+#ifndef HAL_COMPASS_QMC5883L_ORIENTATION_INTERNAL
+#define HAL_COMPASS_QMC5883L_ORIENTATION_INTERNAL ROTATION_ROLL_180_YAW_270
+#endif
+
 class AP_Compass_QMC5883L : public AP_Compass_Backend
 {
 public:
@@ -46,6 +57,8 @@ private:
 					   bool force_external,
                        enum Rotation rotation);
 
+    void _dump_registers();
+    bool _check_whoami();
     void timer();
     bool init();
 

@@ -12,12 +12,10 @@ Extended Kalman Filter class by Sam Tabor, 2013.
 #define EKF_N 4
 
 
-
-
 class ExtendedKalmanFilter {
 public:
     ExtendedKalmanFilter(void) {}
-    
+
     VectorN<float, EKF_N> X;
     MatrixN<float, EKF_N> P;
     MatrixN<float, EKF_N> Q;

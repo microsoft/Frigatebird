@@ -114,6 +114,13 @@ const AP_Param::GroupInfo AP_Avoidance::var_info[] = {
     // @Units: m
     // @User: Advanced
     AP_GROUPINFO("F_DIST_Z",    11, AP_Avoidance, _fail_distance_z, AP_AVOIDANCE_FAIL_DISTANCE_Z_DEFAULT),
+    
+    // @Param: F_ALT_MIN
+    // @DisplayName: ADS-B avoidance minimum altitude
+    // @Description: Minimum altitude for ADS-B avoidance. If the vehicle is below this altitude, no avoidance action will take place. Useful to prevent ADS-B avoidance from activating while below the tree line or around structures. Default of 0 is no minimum.
+    // @Units: m
+    // @User: Advanced
+    AP_GROUPINFO("F_ALT_MIN",    12, AP_Avoidance, _fail_altitude_minimum, 0),
 
     AP_GROUPEND
 };
@@ -305,9 +312,9 @@ float closest_approach_z(const Location &my_loc,
     if (delta_pos_d >= 0 && delta_vel_d >= 0) {
         ret = delta_pos_d;
     } else if (delta_pos_d <= 0 && delta_vel_d <= 0) {
-        ret = fabs(delta_pos_d);
+        ret = fabsf(delta_pos_d);
     } else {
-        ret = fabs(delta_pos_d - delta_vel_d * time_horizon);
+        ret = fabsf(delta_pos_d - delta_vel_d * time_horizon);
     }
 
     debug("   time_horizon: (%d)", time_horizon);
@@ -511,7 +518,13 @@ void AP_Avoidance::handle_avoidance_local(AP_Avoidance::Obstacle *threat)
         new_threat_level = threat->threat_level;
         if (new_threat_level == MAV_COLLISION_THREAT_LEVEL_HIGH) {
             action = (MAV_COLLISION_ACTION)_fail_action.get();
-        }
+            Location my_loc;
+            if (action != MAV_COLLISION_ACTION_NONE && _fail_altitude_minimum > 0 &&
+             _ahrs.get_position(my_loc) && ((my_loc.alt*0.01f) < _fail_altitude_minimum)) {
+                // disable avoidance when close to ground, report only
+                action = MAV_COLLISION_ACTION_REPORT;
+			}
+		}
     }
 
     uint32_t now = AP_HAL::millis();
@@ -567,7 +580,7 @@ void AP_Avoidance::handle_msg(const mavlink_message_t &msg)
                             packet.vy/100.0f,
                             packet.vz/100.0f);
     add_obstacle(AP_HAL::millis(),
-                 MAV_COLLISION_SRC_ADSB,
+                 MAV_COLLISION_SRC_MAVLINK_GPS_GLOBAL_INT,
                  msg.sysid,
                  loc,
                  vel);

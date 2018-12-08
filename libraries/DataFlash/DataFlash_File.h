@@ -6,22 +6,10 @@
  */
 #pragma once
 
-#if HAL_OS_POSIX_IO
+#if HAL_OS_POSIX_IO || HAL_OS_FATFS_IO
 
 #include <AP_HAL/utility/RingBuffer.h>
 #include "DataFlash_Backend.h"
-
-#if CONFIG_HAL_BOARD == HAL_BOARD_QURT
-/*
-  the QURT port has a limited range of system calls available. It
-  cannot provide all the facilities that DataFlash_File wants. It can
-  provide enough to be useful though, which is what
-  DATAFLASH_FILE_MINIMAL is for
- */
-#define DATAFLASH_FILE_MINIMAL 1
-#else
-#define DATAFLASH_FILE_MINIMAL 0
-#endif
 
 class DataFlash_File : public DataFlash_Backend
 {
@@ -53,13 +41,6 @@ public:
     int16_t get_log_data(uint16_t log_num, uint16_t page, uint32_t offset, uint16_t len, uint8_t *data) override;
     uint16_t get_num_logs() override;
     uint16_t start_new_log(void) override;
-    void LogReadProcess(const uint16_t log_num,
-                        uint16_t start_page, uint16_t end_page, 
-                        print_mode_fn print_mode,
-                        AP_HAL::BetterStream *port) override;
-    void DumpPageInfo(AP_HAL::BetterStream *port) override;
-    void ShowDeviceInfo(AP_HAL::BetterStream *port) override;
-    void ListAvailableLogs(AP_HAL::BetterStream *port) override;
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL || CONFIG_HAL_BOARD == HAL_BOARD_LINUX
     void flush(void) override;
@@ -84,6 +65,9 @@ protected:
 
 private:
     int _write_fd;
+    char *_write_filename;
+    uint32_t _last_write_ms;
+    
     int _read_fd;
     uint16_t _read_fd_log_num;
     uint32_t _read_offset;
@@ -96,11 +80,6 @@ private:
     uint8_t io_thread_warning_decimation_counter;
 
     uint16_t _cached_oldest_log;
-
-    /*
-      read a block
-    */
-    bool ReadBlock(void *pkt, uint16_t size) override;
 
     uint16_t _log_num_from_list_entry(const uint16_t list_entry);
 
@@ -157,6 +136,7 @@ private:
         }
         return ret;
     };
+    uint32_t last_messagewrite_message_sent;
 
     // free-space checks; filling up SD cards under NuttX leads to
     // corrupt filesystems which cause loss of data, failure to gather
@@ -165,13 +145,35 @@ private:
     const uint32_t _free_space_check_interval = 1000UL; // milliseconds
     const uint32_t _free_space_min_avail = 8388608; // bytes
 
+    // semaphore mediates access to the ringbuffer
     AP_HAL::Semaphore *semaphore;
+    // write_fd_semaphore mediates access to write_fd so the frontend
+    // can open/close files without causing the backend to write to a
+    // bad fd
+    AP_HAL::Semaphore *write_fd_semaphore;
     
     // performance counters
     AP_HAL::Util::perf_counter_t  _perf_write;
     AP_HAL::Util::perf_counter_t  _perf_fsync;
     AP_HAL::Util::perf_counter_t  _perf_errors;
     AP_HAL::Util::perf_counter_t  _perf_overruns;
+
+    const char *last_io_operation = "";
+
+    struct df_stats {
+        uint16_t blocks;
+        uint32_t bytes;
+        uint32_t buf_space_min;
+        uint32_t buf_space_max;
+        uint32_t buf_space_sigma;
+    };
+    struct df_stats stats;
+
+    void Log_Write_DataFlash_Stats_File(const struct df_stats &_stats);
+    void df_stats_gather(uint16_t bytes_written);
+    void df_stats_log();
+    void df_stats_clear();
+
 };
 
 #endif // HAL_OS_POSIX_IO

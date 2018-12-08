@@ -16,3 +16,4 @@ clean: plane
 
 plane:
 	$(MAKE) -C ArduPlane $(TARGET)
+

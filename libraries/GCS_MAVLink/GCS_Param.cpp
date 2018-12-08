@@ -17,7 +17,7 @@
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_HAL/AP_HAL.h>
 
-#include "ap_version.h"
+#include "AP_Common/AP_FWVersion.h"
 #include "GCS.h"
 
 extern const AP_HAL::HAL& hal;
@@ -102,21 +102,20 @@ GCS_MAVLINK::queued_param_send()
  */
 bool GCS_MAVLINK::have_flow_control(void)
 {
-    if (!valid_channel(chan)) {
+    if (_port == nullptr) {
         return false;
     }
 
-    if (mavlink_comm_port[chan] == nullptr) {
-        return false;
+    if (_port->get_flow_control() != AP_HAL::UARTDriver::FLOW_CONTROL_DISABLE) {
+        return true;
     }
 
     if (chan == MAVLINK_COMM_0) {
         // assume USB console has flow control
-        return hal.gpio->usb_connected() || mavlink_comm_port[chan]->get_flow_control() != AP_HAL::UARTDriver::FLOW_CONTROL_DISABLE;
-    } else {
-        // all other channels
-        return mavlink_comm_port[chan]->get_flow_control() != AP_HAL::UARTDriver::FLOW_CONTROL_DISABLE;
+        return hal.gpio->usb_connected();
     }
+
+    return false;
 }
 
 
@@ -125,7 +124,7 @@ bool GCS_MAVLINK::have_flow_control(void)
   save==false so we don't want the save to happen when the user connects the
   ground station.
  */
-void GCS_MAVLINK::handle_request_data_stream(mavlink_message_t *msg, bool save)
+void GCS_MAVLINK::handle_request_data_stream(mavlink_message_t *msg)
 {
     mavlink_request_data_stream_t packet;
     mavlink_msg_request_data_stream_decode(msg, &packet);
@@ -144,7 +143,7 @@ void GCS_MAVLINK::handle_request_data_stream(mavlink_message_t *msg, bool save)
     case MAV_DATA_STREAM_ALL:
         // note that we don't set STREAM_PARAMS - that is internal only
         for (uint8_t i=0; i<STREAM_PARAMS; i++) {
-            if (save) {
+            if (persist_streamrates()) {
                 streamRates[i].set_and_save_ifchanged(freq);
             } else {
                 streamRates[i].set(freq);
@@ -178,7 +177,7 @@ void GCS_MAVLINK::handle_request_data_stream(mavlink_message_t *msg, bool save)
     }
 
     if (rate != nullptr) {
-        if (save) {
+        if (persist_streamrates()) {
             rate->set_and_save_ifchanged(freq);
         } else {
             rate->set(freq);
@@ -188,14 +187,15 @@ void GCS_MAVLINK::handle_request_data_stream(mavlink_message_t *msg, bool save)
 
 void GCS_MAVLINK::handle_param_request_list(mavlink_message_t *msg)
 {
+    if (!params_ready()) {
+        return;
+    }
+
     mavlink_param_request_list_t packet;
     mavlink_msg_param_request_list_decode(msg, &packet);
 
-    // send system ID if we can
-    char sysid[40];
-    if (hal.util->get_system_id(sysid)) {
-        send_text(MAV_SEVERITY_INFO, sysid);
-    }
+    // requesting parameters is a convenient way to get extra information
+    send_banner();
 
     // Start sending parameters - next call to ::update will kick the first one out
     _queued_parameter = AP_Param::first(&_queued_parameter_token, &_queued_parameter_type);
@@ -228,14 +228,14 @@ void GCS_MAVLINK::handle_param_request_read(mavlink_message_t *msg)
     struct pending_param_request req;
     req.chan = chan;
     req.param_index = packet.param_index;
-    memcpy(req.param_name, packet.param_id, sizeof(req.param_name));
+    memcpy(req.param_name, packet.param_id, MIN(sizeof(packet.param_id), sizeof(req.param_name)));
     req.param_name[AP_MAX_NAME_SIZE] = 0;
 
     // queue it for processing by io timer
     param_requests.push(req);
 }
 
-void GCS_MAVLINK::handle_param_set(mavlink_message_t *msg, DataFlash_Class *DataFlash)
+void GCS_MAVLINK::handle_param_set(mavlink_message_t *msg)
 {
     mavlink_param_set_t packet;
     mavlink_msg_param_set_decode(msg, &packet);
@@ -269,6 +269,7 @@ void GCS_MAVLINK::handle_param_set(mavlink_message_t *msg, DataFlash_Class *Data
     // save the change
     vp->save(force_save);
 
+    DataFlash_Class *DataFlash = DataFlash_Class::instance();
     if (DataFlash != nullptr) {
         DataFlash->Log_Write_Parameter(key, vp->cast_to_float(var_type));
     }
@@ -321,14 +322,15 @@ bool GCS_MAVLINK::stream_trigger(enum streams stream_num)
 /*
   send a parameter value message to all active MAVLink connections
  */
-void GCS_MAVLINK::send_parameter_value_all(const char *param_name, ap_var_type param_type, float param_value)
+void GCS::send_parameter_value(const char *param_name, ap_var_type param_type, float param_value)
 {
+    const uint8_t mavlink_active = GCS_MAVLINK::active_channel_mask();
     for (uint8_t i=0; i<MAVLINK_COMM_NUM_BUFFERS; i++) {
         if ((1U<<i) & mavlink_active) {
-            mavlink_channel_t chan = (mavlink_channel_t)(MAVLINK_COMM_0+i);
-            if (HAVE_PAYLOAD_SPACE(chan, PARAM_VALUE)) {
+            const mavlink_channel_t _chan = (mavlink_channel_t)(MAVLINK_COMM_0+i);
+            if (HAVE_PAYLOAD_SPACE(_chan, PARAM_VALUE)) {
                 mavlink_msg_param_value_send(
-                    chan,
+                    _chan,
                     param_name,
                     param_value,
                     mav_var_type(param_type),
@@ -435,4 +437,19 @@ void GCS_MAVLINK::send_parameter_reply(void)
         mav_var_type(reply.p_type),
         reply.count,
         reply.param_index);
+}
+
+void GCS_MAVLINK::handle_common_param_message(mavlink_message_t *msg)
+{
+    switch (msg->msgid) {
+    case MAVLINK_MSG_ID_PARAM_REQUEST_LIST:
+        handle_param_request_list(msg);
+        break;
+    case MAVLINK_MSG_ID_PARAM_SET:
+        handle_param_set(msg);
+        break;
+    case MAVLINK_MSG_ID_PARAM_REQUEST_READ:
+        handle_param_request_read(msg);
+        break;
+    }
 }

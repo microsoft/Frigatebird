@@ -45,28 +45,12 @@ extern const AP_HAL::HAL& hal;
 
 AP_GPS_UBLOX::AP_GPS_UBLOX(AP_GPS &_gps, AP_GPS::GPS_State &_state, AP_HAL::UARTDriver *_port) :
     AP_GPS_Backend(_gps, _state, _port),
-    _step(0),
-    _msg_id(0),
-    _payload_length(0),
-    _payload_counter(0),
-    _class(0),
-    _cfg_saved(false),
-    _last_cfg_sent_time(0),
-    _num_cfg_save_tries(0),
-    _last_config_time(0),
-    _delay_time(0),
     _next_message(STEP_PVT),
     _ublox_port(255),
-    _have_version(false),
     _unconfigured_messages(CONFIG_ALL),
     _hardware_generation(UBLOX_UNKNOWN_HARDWARE_GENERATION),
-    _new_position(0),
-    _new_speed(0),
-    _disable_counter(0),
     next_fix(AP_GPS::NO_FIX),
-    _cfg_needs_save(false),
-    noReceivedHdop(true),
-    havePvtMsg(false)
+    noReceivedHdop(true)
 {
     // stop any config strings that are pending
     gps.send_blob_start(state.instance, nullptr, 0);
@@ -398,7 +382,7 @@ AP_GPS_UBLOX::read(void)
             }
             _step = 0;
             Debug("reset %u", __LINE__);
-            /* no break */
+            FALLTHROUGH;
         case 0:
             if(PREAMBLE1 == data)
                 _step++;
@@ -494,6 +478,7 @@ void AP_GPS_UBLOX::log_mon_hw(void)
         jamInd     : _buffer.mon_hw_60.jamInd,
         aPower     : _buffer.mon_hw_60.aPower,
         agcCnt     : _buffer.mon_hw_60.agcCnt,
+        config     : _unconfigured_messages,
     };
     if (_payload_length == 68) {
         pkt.noisePerMS = _buffer.mon_hw_68.noisePerMS;
@@ -730,7 +715,7 @@ AP_GPS_UBLOX::_parse_gps(void)
                         _buffer.gnss.configBlock[i].flags = _buffer.gnss.configBlock[i].flags & 0xFFFFFFFE;
                     }
                 }
-                if (!memcmp(&start_gnss, &_buffer.gnss, sizeof(start_gnss))) {
+                if (memcmp(&start_gnss, &_buffer.gnss, sizeof(start_gnss))) {
                     _send_message(CLASS_CFG, MSG_CFG_GNSS, &_buffer.gnss, 4 + (8 * _buffer.gnss.numConfigBlocks));
                     _unconfigured_messages |= CONFIG_GNSS;
                     _cfg_needs_save = true;
@@ -1028,6 +1013,7 @@ AP_GPS_UBLOX::_parse_gps(void)
         state.time_week_ms = AP_HAL::millis() + 3*60*60*1000 + 37000;
         state.last_gps_time_ms = AP_HAL::millis();
         state.hdop = 130;
+        state.speed_accuracy = 0;
         next_fix = state.status;
 #endif
         break;
@@ -1215,7 +1201,7 @@ reset:
                 break;
             }
             state.step = 0;
-            /* no break */
+            FALLTHROUGH;
         case 0:
             if (PREAMBLE1 == data)
                 state.step++;
