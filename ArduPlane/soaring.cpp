@@ -75,16 +75,17 @@ void Plane::update_soaring()
         g2.soaring_controller.set_throttle_suppressed(true);
         break;
     case GUIDED:
-            if (previous_mode == MANUAL) {
-                gcs().send_text(MAV_SEVERITY_ALERT, "Forcing MANUAL overide of GUIDED mode");
-                set_mode(MANUAL, MODE_REASON_UNKNOWN);
-                return;
-            }
-            else if (previous_mode == FLY_BY_WIRE_A) {
-                gcs().send_text(MAV_SEVERITY_ALERT, "Forcing FBWA overide of GUIDED mode");
-                set_mode(FLY_BY_WIRE_A, MODE_REASON_UNKNOWN);
-                return;
-            }
+        if (previous_mode == MANUAL) {
+            gcs().send_text(MAV_SEVERITY_ALERT, "Forcing MANUAL overide of GUIDED mode");
+            set_mode(MANUAL, MODE_REASON_UNKNOWN);
+            return;
+        }
+        else if (previous_mode == FLY_BY_WIRE_A) {
+            gcs().send_text(MAV_SEVERITY_ALERT, "Forcing FBWA overide of GUIDED mode");
+            set_mode(FLY_BY_WIRE_A, MODE_REASON_UNKNOWN);
+            return;
+        }
+        FALLTHROUGH;
     case AUTO:
         g2.soaring_controller.suppress_throttle();
         g2.soaring_controller.stop_computation();

@@ -47,17 +47,6 @@ function get_time {
 echo "Targets: $CI_BUILD_TARGET"
 for t in $CI_BUILD_TARGET; do
     # special case for SITL testing in CI
-    if [ $t == "sitltest-copter" ]; then
-        echo "Installing pymavlink"
-        git submodule init
-        git submodule update
-        (cd modules/mavlink/pymavlink && python setup.py build install --user)
-        unset BUILDROOT
-        echo "Running SITL QuadCopter test"
-        Tools/autotest/autotest.py build.ArduCopter fly.ArduCopter
-        ccache -s && ccache -z
-        continue
-    fi
     if [ $t == "sitltest-plane" ]; then
         echo "Installing pymavlink"
         git submodule init
@@ -80,18 +69,7 @@ for t in $CI_BUILD_TARGET; do
         ccache -s && ccache -z
         continue
     fi
-    if [ $t == "sitltest-rover" ]; then
-        echo "Installing pymavlink"
-        git submodule init
-        git submodule update
-        (cd modules/mavlink/pymavlink && python setup.py build install --user)
-        unset BUILDROOT
-        echo "Running SITL Rover test"
-        Tools/autotest/autotest.py build.APMrover2 drive.APMrover2
-        ccache -s && ccache -z
-        continue
-    fi
-
+    
     if [ $t == "revo-bootloader" ]; then
         echo "Building revo bootloader"
         $waf configure --board revo-mini --bootloader
@@ -146,11 +124,7 @@ for t in $CI_BUILD_TARGET; do
     fi
 done
 
-python Tools/autotest/param_metadata/param_parse.py --no-emit --vehicle APMrover2
-python Tools/autotest/param_metadata/param_parse.py --no-emit --vehicle AntennaTracker
-python Tools/autotest/param_metadata/param_parse.py --no-emit --vehicle ArduCopter
 python Tools/autotest/param_metadata/param_parse.py --no-emit --vehicle ArduPlane
-python Tools/autotest/param_metadata/param_parse.py --no-emit --vehicle ArduSub
 
 echo build OK
 exit 0

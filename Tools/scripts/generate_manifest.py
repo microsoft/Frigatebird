@@ -35,17 +35,7 @@ class ManifestGenerator():
     def frame_map(self, frame):
         '''translate from ArduPilot frame type terminology into mavlink terminology'''
         frame_to_mavlink_dict = {
-            "quad": "QUADROTOR",
-            "hexa": "HEXAROTOR",
-            "y6": "ARDUPILOT_Y6",
-            "tri": "TRICOPTER",
-            "octa": "OCTOROTOR",
-            "octa-quad": "ARDUPILOT_OCTAQUAD",
-            "heli": "HELICOPTER",
-            "Plane": "FIXED_WING",
-            "AntennaTracker": "ANTENNA_TRACKER",
-            "Rover": "GROUND_ROVER",
-            "Sub": "SUBMARINE"
+            "Plane": "FIXED_WING"
         }
         if frame in frame_to_mavlink_dict:
             return frame_to_mavlink_dict[frame]
@@ -60,7 +50,7 @@ class ManifestGenerator():
     def looks_like_binaries_directory(self, dir):
         '''returns True if dir looks like it is a build_binaries.py output directory'''
         for entry in os.listdir(dir):
-            if entry in {"AntennaTracker", "Copter", "Plane", "Rover", "Sub"}:
+            if entry in {"Plane"}:
                 return True
         return False
 
@@ -203,7 +193,7 @@ class ManifestGenerator():
         xfirmwares = dict()
 
         # used to listdir basedir here, but since this is also a web document root, there's a lot of other stuff accumulated...
-        vehicletypes = [ 'AntennaTracker', 'Copter', 'Plane', 'Rover', 'Sub' ]
+        vehicletypes = [ 'Plane' ]
         for vehicletype in vehicletypes:
             try:
                 vdir = os.listdir(os.path.join(basedir, vehicletype))

@@ -1,17 +1,29 @@
-# Building ArduPlane with POMDSoar#
+# Building ArduPlane with POMDSoar
 
 Please follow [ArduPilot's build instructions for your OS](http://ardupilot.org/dev/docs/building-the-code.html), replacing "ArduCopter" with "ArduPlane" and "https://github.com/ArduPilot/ardupilot.git" with "https://github.com/Microsoft/Frigatebird.git"
 
-__Important__: After initialzing the Git submodules, copy the file Frigatebird/ardupilotmega.xml, in the root of the Frigatebird repository, over the one in the MAVLink submodule: mavlink/message_definitions/v1.0/ardupilotmega.xml.
+On Windows 10, we recommend [building using Waf on Cygwin64](http://ardupilot.org/dev/docs/building-setup-windows-cygwin.html) as opposed to using Make. We also strongly recommend building the firmware on top of ChibiOS rather than NuttX. After setting up your build environment as described at the above link, cloning Frigatebird, and running
 
-For Windows 10, at this time we recommend [building using Make](http://ardupilot.org/dev/docs/building-px4-with-make.html#building-px4-with-make), as opposed to [building using Waf](http://ardupilot.org/dev/docs/building-setup-windows-cygwin.html), since the latter does not seem to be fully worked out for Windows yet.
+        git submodule update --init --recursive
 
-Additional notes for building on Windows:
+from your local Frigatebird repo's root directory, you can build the ChibiOS flavor of ArduPlane/POMDSoar firmware for, e.g., Pixhawk by running the following commands from the same location:
 
--  Before proceeeding with other instructions, make sure you have the most [Git for Windows](https://gitforwindows.org/) installed. Otherwise, you may see errors such as
+        ./waf distclean
+        ./waf configure --board fmuv2
+        ./waf plane
+
+As another example, you can build a SITL flavor of it by running
+
+        ./waf distclean
+        ./waf configure --board sitl
+        ./waf plane
+
+
+Additional notes for building the firmware on Windows:
+
+-  Before proceeeding with other instructions, make sure you have the most recent [Git for Windows](https://gitforwindows.org/) installed. Otherwise, you may see errors such as
     
         SSL routines:SSL23_GET_SERVER_HELLO:tlsv1 alert protocol version
     
-   that will prevent you from performing basic Git operations.
-   
--  If when building from [PX4Console](http://ardupilot.org/dev/docs/building-px4-with-make.html#building-px4-with-make) you encounter issues with creating directories, close the PX4Console window and restart it as Administrator.
+that will prevent you from performing basic Git operations.
+

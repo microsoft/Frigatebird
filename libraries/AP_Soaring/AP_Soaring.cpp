@@ -1169,8 +1169,10 @@ SoaringController::get_position(Location& loc)
 {
     if (debug_mode)
     {
-        loc.lat = *((int32_t *)(&_debug_in[DBG_LAT]));
-        loc.lng = *((int32_t *)(&_debug_in[DBG_LNG]));
+        int32_t *lat_temp = (int32_t *)(&_debug_in[DBG_LAT]);
+        loc.lat = *lat_temp;
+        int32_t *lng_temp = (int32_t *)(&_debug_in[DBG_LNG]);
+        loc.lng = *lng_temp;
         loc.alt = (int32_t)(_debug_in[DBG_ALT] * 100);
     }
     else
