@@ -44,8 +44,9 @@ SilentWings::SilentWings(const char *home_str, const char *frame_str) :
     sock.set_blocking(false);
     
     // TO DO: Force ArduPlane to use sensor data from SilentWings as the actual state,
-    // without using EKF, i.e., using "fake EKF". Disable gyro calibration
-    // For some reason, setting these parameters succeeds but has no effect...
+    // without using EKF, i.e., using "fake EKF (type 10)". Disable gyro calibration
+    // For some reason, setting these parameters programmatically succeeds but has no effect.
+	// So, for now they need to be set manually in the .param file.
     /*
     AP_Param::set_default_by_name("AHRS_EKF_TYPE", 10);
     AP_Param::set_default_by_name("EK2_ENABLE", 0);
@@ -85,11 +86,6 @@ void SilentWings::send_servos(const struct sitl_input &input)
     ssize_t sent = sock.sendto(buf, buflen, "127.0.0.1", 6070);
     free(buf);
 
-    /*
-    printf("Sent AIL %f, ELE %f, RUD %f, THR %f, FLP %f\n",
-             aileron, elevator, rudder, throttle, flap);
-    */
-
     if (sent < 0) {
         fprintf(stderr, "Fatal: Failed to send on control socket\n"),
         exit(1);
@@ -107,30 +103,25 @@ void SilentWings::send_servos(const struct sitl_input &input)
  */
 bool SilentWings::recv_fdm(void)
 {
-    fdm_packet pkt;
+    fdm_packet tmp_pkt;
     memset(&pkt, 0, sizeof(pkt));
-    uint32_t now = AP_HAL::millis();
 
-    // TO DO: so far this logic, copied over from X-Plane's SITL, doesn't work very well.
-    // Figure out why and enable it?
-    /*
-    uint32_t wait_time_ms = 1;
-    // if we are about to get another frame from SilentWings then wait longer
-    if (sw_frame_time > wait_time_ms && now + wait_time_ms >= last_data_time_ms + sw_frame_time) {
-        wait_time_ms = 10;
-    }
-    
-    ssize_t nread = sock.recv(&pkt, sizeof(pkt), wait_time_ms);
-    */
-    
-    ssize_t nread = sock.recv(&pkt, sizeof(pkt), 0);
+    ssize_t nread = sock.recv(&tmp_pkt, sizeof(pkt), 0);
     
     // nread == -1 (255) means no data has arrived
     if (nread != sizeof(pkt)) {
-        return finalize_failure();
-        //return false;
-    }    
-    
+        return false;
+    }  
+	
+	memcpy(&pkt, &tmp_pkt, sizeof(pkt));
+
+    // data received successfully
+    return true;
+}
+
+
+void SilentWings::process_packet()
+{
     // pkt.timestamp is the time of day in SilentWings, measured in ms 
     // since midnight.  
     // TO DO: check what happens when a flight in SW crosses midnight
@@ -151,7 +142,9 @@ bool SilentWings::recv_fdm(void)
     }
     else {
         first_pkt_timestamp_ms = pkt.timestamp;
+		time_base_us = first_pkt_timestamp_ms;
         inited_first_pkt_timestamp = true;
+		printf("INITED FIRST PACKET TIME STAMP!\n");
     }
     
     dcm.from_euler(radians(pkt.roll), radians(pkt.pitch), radians(pkt.yaw));    
@@ -191,15 +184,11 @@ bool SilentWings::recv_fdm(void)
     
     // Auto-adjust to SilentWings' frame rate
     // This affects the data rate (without this adjustment, the data rate is
-    // low no matter what the output_udp_rate in SW's options.dat file is.
+    // low no matter what the output_udp_rate in SW's options.dat file is).
     double deltat = (AP_HAL::millis() - last_data_time_ms) / 1000.0f;
     
     if (deltat < 0.01 && deltat > 0) {
         adjust_frame_time(1.0/deltat);
-    }
-    
-    if (now > last_data_time_ms && now - last_data_time_ms < 100) {
-        sw_frame_time = now - last_data_time_ms;
     }
     
     last_data_time_ms = AP_HAL::millis();
@@ -225,21 +214,16 @@ bool SilentWings::recv_fdm(void)
     
     // printf("Ground level: %f; pos-x: %f; pos-y: %f; pos-z: %f; location-z(alt) in meters: %f; curr_location-z(alt) in meters: %f; alt_msl: %f; alt_ground: %f\n", ground_level, position.x, position.y, position.z, location.alt*0.01f, curr_location.alt*0.01f, pkt.altitude_msl, pkt.altitude_ground);
     // printf("Delta: %f; Time: %d; Lat: %f; Lon: %f; Airspeed: %f; Altitude AGL: %f; Accel-z: %f; Vel-z_ef: %f\n", deltat, pkt.timestamp, pkt.position_latitude, pkt.position_longitude, airspeed, pkt.altitude_ground, pkt.az, velocity_ef[2]);
-    
-    // data received successfully
-    return true;
 }
 
 
-bool SilentWings::finalize_failure()
+bool SilentWings::interim_update()
 {
     if (AP_HAL::millis() - last_data_time_ms > 200) {
         // don't extrapolate beyond 0.2s
         return false;
     }
 
-    // advance time by 1ms
-    frame_time_us = 1000;
     float delta_time = frame_time_us * 1e-6f;
     time_now_us += frame_time_us;
     extrapolate_sensors(delta_time);
@@ -253,25 +237,44 @@ bool SilentWings::finalize_failure()
   update the SilentWings simulation by one time step
  */
 void SilentWings::update(const struct sitl_input &input)
-{   
+{
     if (recv_fdm()) {
+		process_packet();
+		// Time has been advanced by process_packet(.)
         send_servos(input);
     }
-    
-    time_advance();
+	else if (interim_update()) {
+		// This clause is triggered only if we previously
+		// received at least one data packet.
+		// Time has been advanced by interim_update(.)
+		send_servos(input);
+	}
+	
+	// This clause is triggered if and only if we haven't received
+    // any data packets yet (and therefore didn't attempt
+	// extrapolating data via interim_update(.) either).
+	if (!inited_first_pkt_timestamp){
+		time_advance();
+	}
+	else {
+		if (use_time_sync) {
+			sync_frame_time();
+		}
+    }
+	
     update_mag_field_bf();
     
-    uint32_t now = AP_HAL::millis();
+    int32_t now = AP_HAL::millis();
     
     if (report.last_report_ms == 0) {
         report.last_report_ms = now;
+		printf("Resetting last report time to now\n");
     }
     
-    // printf("TIME NOW: %d, TIME OF LAST REPORT: %d\n", now, report.last_report_ms);
     if (now - report.last_report_ms > 5000) {
         float dt = (now - report.last_report_ms) * 1.0e-3f;
-        printf("Data rate: %.1f FPS  Frame rate: %.1f FPS\n",
-              report.data_count/dt, report.frame_count/dt);
+        printf("Data rate: %.1f FPS  Frame rate: %.1f FPS dt: %.3f ms Frame time: %" PRIu64 " us Last report %d ms\n",
+              report.data_count/dt, report.frame_count/dt, dt, frame_time_us, report.last_report_ms);
         report.last_report_ms = now;
         report.data_count = 0;
         report.frame_count = 0;
