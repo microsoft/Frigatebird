@@ -46,7 +46,7 @@ SilentWings::SilentWings(const char *home_str, const char *frame_str) :
     // TO DO: Force ArduPlane to use sensor data from SilentWings as the actual state,
     // without using EKF, i.e., using "fake EKF (type 10)". Disable gyro calibration
     // For some reason, setting these parameters programmatically succeeds but has no effect.
-	// So, for now they need to be set manually in the .param file.
+    // So, for now they need to be set manually in the .param file.
     /*
     AP_Param::set_default_by_name("AHRS_EKF_TYPE", 10);
     AP_Param::set_default_by_name("EK2_ENABLE", 0);
@@ -112,8 +112,8 @@ bool SilentWings::recv_fdm(void)
     if (nread != sizeof(pkt)) {
         return false;
     }  
-	
-	memcpy(&pkt, &tmp_pkt, sizeof(pkt));
+    
+    memcpy(&pkt, &tmp_pkt, sizeof(pkt));
 
     // data received successfully
     return true;
@@ -142,9 +142,8 @@ void SilentWings::process_packet()
     }
     else {
         first_pkt_timestamp_ms = pkt.timestamp;
-		time_base_us = first_pkt_timestamp_ms;
+        time_base_us = first_pkt_timestamp_ms;
         inited_first_pkt_timestamp = true;
-		printf("INITED FIRST PACKET TIME STAMP!\n");
     }
     
     dcm.from_euler(radians(pkt.roll), radians(pkt.pitch), radians(pkt.yaw));    
@@ -239,36 +238,36 @@ bool SilentWings::interim_update()
 void SilentWings::update(const struct sitl_input &input)
 {
     if (recv_fdm()) {
-		process_packet();
-		// Time has been advanced by process_packet(.)
+        process_packet();
+        // Time has been advanced by process_packet(.)
         send_servos(input);
     }
-	else if (interim_update()) {
-		// This clause is triggered only if we previously
-		// received at least one data packet.
-		// Time has been advanced by interim_update(.)
-		send_servos(input);
-	}
-	
-	// This clause is triggered if and only if we haven't received
-    // any data packets yet (and therefore didn't attempt
-	// extrapolating data via interim_update(.) either).
-	if (!inited_first_pkt_timestamp){
-		time_advance();
-	}
-	else {
-		if (use_time_sync) {
-			sync_frame_time();
-		}
+    else if (interim_update()) {
+        // This clause is triggered only if we previously
+        // received at least one data packet.
+        // Time has been advanced by interim_update(.)
+        send_servos(input);
     }
-	
+    
+    // This clause is triggered if and only if we haven't received
+    // any data packets yet (and therefore didn't attempt
+    // extrapolating data via interim_update(.) either).
+    if (!inited_first_pkt_timestamp){
+        time_advance();
+    }
+    else {
+        if (use_time_sync) {
+            sync_frame_time();
+        }
+    }
+    
     update_mag_field_bf();
     
     int32_t now = AP_HAL::millis();
     
     if (report.last_report_ms == 0) {
         report.last_report_ms = now;
-		printf("Resetting last report time to now\n");
+        printf("Resetting last report time to now\n");
     }
     
     if (now - report.last_report_ms > 5000) {
