@@ -35,7 +35,7 @@ SilentWings::SilentWings(const char *home_str, const char *frame_str) :
     home_initialized(false),
     inited_first_pkt_timestamp(false)
 {
-    // try to bind to a specific port so that if we restart ArduPilot
+    // Try to bind to a specific port so that if we restart ArduPilot
     // SilentWings keeps sending us packets. Not strictly necessary but
     // useful for debugging
     sock.bind("127.0.0.1", 6060);
@@ -63,7 +63,7 @@ void SilentWings::send_servos(const struct sitl_input &input)
 {
     char *buf = nullptr;
     // Turn off direct joystick input to the simulator. All joystick commands
-    // should go through MissionPlanner and get properly fused with ArduPlane's
+    // should go through Mission Planner and get properly fused with ArduPlane's
     // control inputs when in automatic flight modes.
     float joystick = 0.0f;
     float aileron  = filtered_servo_angle(input, 0);
@@ -98,7 +98,7 @@ void SilentWings::send_servos(const struct sitl_input &input)
 
 
 /*
-  receive an update from the FDM
+  Receive an update from the FDM
   This is a blocking function
  */
 bool SilentWings::recv_fdm(void)
@@ -127,22 +127,11 @@ void SilentWings::process_packet()
     // TO DO: check what happens when a flight in SW crosses midnight
     if (inited_first_pkt_timestamp) {
         uint64_t tus = (pkt.timestamp - first_pkt_timestamp_ms) * 1.0e3f;
-        
-        if (tus + time_base_us <= time_now_us) {
-            uint64_t tdiff = time_now_us - (tus + time_base_us);
-            
-            if (tdiff > 1e6f) {
-                printf("SilentWings time reset %lu\n", (unsigned long)tdiff);
-            }
-            
-            time_base_us = time_now_us - tus;
-        }
-        
         time_now_us = time_base_us + tus;
     }
     else {
         first_pkt_timestamp_ms = pkt.timestamp;
-        time_base_us = first_pkt_timestamp_ms;
+        time_base_us = time_now_us;
         inited_first_pkt_timestamp = true;
     }
     
@@ -155,6 +144,7 @@ void SilentWings::process_packet()
     wind_ef = dcm * (Vector3f(pkt.vx, pkt.vy, pkt.vz) - Vector3f(pkt.vx_wind, pkt.vy_wind, pkt.vz_wind));
     airspeed = pkt.v_eas;
     airspeed_pitot = pkt.v_eas;
+    Location curr_location;
     curr_location.lat = pkt.position_latitude * 1.0e7;
     curr_location.lng = pkt.position_longitude * 1.0e7;
     curr_location.alt = pkt.altitude_msl * 100.0f;
@@ -165,6 +155,8 @@ void SilentWings::process_packet()
     position.z = posdelta.z;
     update_position();
     
+    // In case Silent Wings' reported location and our location calculated using an offset from the home location diverge, we need
+    // to reset the home location.
     if (get_distance(curr_location, location) > 4 || abs(curr_location.alt - location.alt)*0.01f > 2.0f || !home_initialized) {
         printf("SilentWings home reset dist=%f alt=%.1f/%.1f\n",
                get_distance(curr_location, location), curr_location.alt*0.01f, location.alt*0.01f);
@@ -181,7 +173,7 @@ void SilentWings::process_packet()
         update_position();
     }
     
-    // Auto-adjust to SilentWings' frame rate
+    // Auto-adjust to Silent Wings' frame rate
     // This affects the data rate (without this adjustment, the data rate is
     // low no matter what the output_udp_rate in SW's options.dat file is).
     double deltat = (AP_HAL::millis() - last_data_time_ms) / 1000.0f;
@@ -210,12 +202,11 @@ void SilentWings::process_packet()
         printf("Pitch %f\n",   pkt.pitch);
         printf("Yaw %f\n",     pkt.yaw);
     }
-    
-    // printf("Ground level: %f; pos-x: %f; pos-y: %f; pos-z: %f; location-z(alt) in meters: %f; curr_location-z(alt) in meters: %f; alt_msl: %f; alt_ground: %f\n", ground_level, position.x, position.y, position.z, location.alt*0.01f, curr_location.alt*0.01f, pkt.altitude_msl, pkt.altitude_ground);
-    // printf("Delta: %f; Time: %d; Lat: %f; Lon: %f; Airspeed: %f; Altitude AGL: %f; Accel-z: %f; Vel-z_ef: %f\n", deltat, pkt.timestamp, pkt.position_latitude, pkt.position_longitude, airspeed, pkt.altitude_ground, pkt.az, velocity_ef[2]);
 }
 
-
+/*
+  Extrapolates sensor data if Silent Wings hasn't sent us a data packet in a while.
+ */
 bool SilentWings::interim_update()
 {
     if (AP_HAL::millis() - last_data_time_ms > 200) {
@@ -233,7 +224,7 @@ bool SilentWings::interim_update()
 
 
 /*
-  update the SilentWings simulation by one time step
+  Update the Silent Wings simulation by one time step.
  */
 void SilentWings::update(const struct sitl_input &input)
 {
@@ -272,8 +263,8 @@ void SilentWings::update(const struct sitl_input &input)
     
     if (now - report.last_report_ms > 5000) {
         float dt = (now - report.last_report_ms) * 1.0e-3f;
-        printf("Data rate: %.1f FPS  Frame rate: %.1f FPS dt: %.3f ms Frame time: %" PRIu64 " us Last report %d ms\n",
-              report.data_count/dt, report.frame_count/dt, dt, frame_time_us, report.last_report_ms);
+        printf("Data rate: %.1f FPS  Frame rate: %.1f FPS\n",
+              report.data_count/dt, report.frame_count/dt);
         report.last_report_ms = now;
         report.data_count = 0;
         report.frame_count = 0;

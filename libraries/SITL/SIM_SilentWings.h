@@ -12,9 +12,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-/*
-  simulator connection for ardupilot version of CRRCSim
-*/
 
 #pragma once
 
@@ -25,60 +22,57 @@
 namespace SITL {
 
 /*
-  a SilentWings simulator
- */
+  A wrapper for a simulated Silent Wings aircraft.
+*/
 class SilentWings : public Aircraft {
 public:
     SilentWings(const char *home_str, const char *frame_str);
 
-    /* update model by one time step */
+    /* Updates the aircraft model by one time step */
     void update(const struct sitl_input &input);
 
-    /* static object creator */
+    /* Static object creator */
     static Aircraft *create(const char *home_str, const char *frame_str) {
         return new SilentWings(home_str, frame_str);
     }
 
 private:
 
-    /*
-      reply packet sent from SilentWings to ArduPilot
-     */
+    /* Reply packet sent from SilentWings to ArduPlane */
     struct PACKED fdm_packet {
            unsigned int timestamp;          // Millisec  Timestamp
            double position_latitude;        // Degrees   Position latitude,
            double position_longitude;       // Degrees            longitude,
-           float  altitude_msl;             // m         Altitude - relative to Sea-level
-           float  altitude_ground;          // m         Altitude above gnd
-           float  altitude_ground_45;       // m         gnd 45 degrees ahead (NOT IMPLEMENTED YET),
-           float  altitude_ground_forward;  // m         gnd straight ahead (NOT IMPLEMENTED YET).
+           float  altitude_msl;             // m         Altitude w.r.t. the sea level
+           float  altitude_ground;          // m         Altitude w.r.t. the ground level 
+           float  altitude_ground_45;       // m         Ground 45 degrees ahead (NOT IMPLEMENTED YET)
+           float  altitude_ground_forward;  // m         Ground straight ahead (NOT IMPLEMENTED YET)
            float  roll;                     // Degrees
            float  pitch;                    // Degrees
            float  yaw;                      // Degrees
-           float  d_roll;                    // Deg/sec   Roll speed.
-           float  d_pitch;                   // Deg/sec   Pitch speed.
-           float  d_yaw;                     // Deg/sec   Yaw speed.
-           float  vx;                        // m/sec     Speed vector in body-axis
+           float  d_roll;                   // Deg/sec   Roll speed
+           float  d_pitch;                  // Deg/sec   Pitch speed
+           float  d_yaw;                    // Deg/sec   Yaw speed
+           float  vx;                       // m/s       Velocity vector in body-axis
            float  vy; 
            float  vz;                
-           float  vx_wind;                   // m/sec     Speed vector in body-axis, relative to wind
+           float  vx_wind;                  // m/s       Velocity vector in body-axis, relative to the wind
            float  vy_wind;
            float  vz_wind; 
-           float  v_eas;                     // m/sec     Equivalent (indicated) air speed. 
-           float  ax;                        // m/sec2    Acceleration vector in body axis
+           float  v_eas;                    // m/s       Equivalent (indicated) air speed.
+           float  ax;                       // m/s^2     Acceleration vector in body axis
            float  ay;
            float  az;
            float  angle_of_attack;          // Degrees   Angle of attack
            float  angle_sideslip;           // Degrees   Sideslip angle
-           float  vario;                     // m/sec     TE-compensated variometer.
-           float  heading;                   // Degrees   Compass heading.
-           float  rate_of_turn;              // Deg/sec   Rate of turn.
-           float  airpressure;               // pascal    Local air pressure (at aircraft altitude).
-           float  density;                   // Air density at aircraft altitude.
-           float  temperature;               // Celcius   Air temperature at aircraft altitude.
+           float  vario;                    // m/s       Total energy-compensated variometer
+           float  heading;                  // Degrees   Compass heading
+           float  rate_of_turn;             // Deg/sec   Rate of turn
+           float  airpressure;              // Pa        Local air pressure at aircraft altitude)
+           float  density;                  // Air density at aircraft altitude
+           float  temperature;              // Degrees Celcius   Air temperature at aircraft altitude
     } pkt;
     
-    uint32_t sw_frame_time;
     struct {
         int32_t last_report_ms;
         uint32_t data_count;
@@ -88,16 +82,24 @@ private:
     bool recv_fdm(void);
     void process_packet();
     bool interim_update();
+    
+    /* Sends control inputs to the Silent Wings. */
     void send_servos(const struct sitl_input &input);
 
+    /* Timestamp of the latest data packet received from Silent Wings. */
     uint32_t last_data_time_ms;
+    
+    /* Timestamp of the first data packet received from Silent Wings. */
     uint32_t first_pkt_timestamp_ms;
+    
+    /* Indicates whether first_pkt_timestamp_ms has been initialized (i.e., any packets have been received from Silent Wings. */ 
     bool inited_first_pkt_timestamp;
+    
+    /* ArduPlane's internal time when the first packet from Silent Wings is received. */
     uint64_t time_base_us;
     
     SocketAPM sock;
 
-    Location curr_location;
     bool home_initialized;
 };
 
