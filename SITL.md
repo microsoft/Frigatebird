@@ -48,7 +48,7 @@ The following instructions have been tested on Windows 10.
 
 ## Running Silent Wings SITL
 
-1. **Launch Silent Wings.** In Silent Wings' *Flight Planner* section, on the *Aircraft* tab choose a sailplane. Note that each sailplane model has distinct characteristics, and the Frigatebird autopilot needs a parameter (.param) file for that model in order to be aware of them. We provide a [parameter file for Rolladen-Schneider LS-8b](/libraries/SITL/Data/SilentWings/Missions/Rolladen-Schneider-LS8b.param) and this is the sailplane we recommend as a start.
+1. **Launch Silent Wings.** In Silent Wings' *Flight Planner* section, on the *Aircraft* tab choose a sailplane. Note that each sailplane model has distinct characteristics, and the Frigatebird autopilot needs a parameter (.param) file for that model in order to be aware of them. We provide a [parameter file for Rolladen-Schneider LS-8b](/libraries/SITL/Data/SilentWings/Params/Rolladen-Schneider-LS8b.param) and this is the sailplane we recommend as a start.
 
    Set weather and air traffic conditions on the *Weather* and *Traffic* tabs respectively. On the *Location* tab, choose the map and starting location, and note its GPS coordinates, altitude, and heading. You will need this information when launching SITL. Then click the *Fly Now!* button on the bottom right. The game is going to start in a paused state. Keep it paused for now.    
    ![alt text][silent_wings_setup]
