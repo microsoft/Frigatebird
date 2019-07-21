@@ -19,12 +19,37 @@
 #include "SIM_SilentWings.h"
 
 #include <stdio.h>
+#include <errno.h>
 
 #include <AP_HAL/AP_HAL.h>
 
 extern const AP_HAL::HAL& hal;
 
-namespace SITL {
+using namespace SITL;
+
+static const struct {
+    const char *name;
+    float value;
+    bool save;
+} sim_defaults[] = {
+    { "AHRS_EKF_TYPE", 10 },
+    { "INS_GYR_CAL", 0 },
+    { "EK2_ENABLE", 0 },
+    { "ARSPD_ENABLE", 1 },
+    { "ARSPD_USE", 1 },
+    { "INS_ACC2OFFS_X",    0.001 },
+    { "INS_ACC2OFFS_Y",    0.001 },
+    { "INS_ACC2OFFS_Z",    0.001 },
+    { "INS_ACC2SCAL_X",    1.001 },
+    { "INS_ACC2SCAL_Y",    1.001 },
+    { "INS_ACC2SCAL_Z",    1.001 },
+    { "INS_ACCOFFS_X",     0.001 },
+    { "INS_ACCOFFS_Y",     0.001 },
+    { "INS_ACCOFFS_Z",     0.001 },
+    { "INS_ACCSCAL_X",     1.001 },
+    { "INS_ACCSCAL_Y",     1.001 },
+    { "INS_ACCSCAL_Z",     1.001 },
+};
 
 SilentWings::SilentWings(const char *home_str, const char *frame_str) :
     Aircraft(home_str, frame_str),
@@ -35,26 +60,47 @@ SilentWings::SilentWings(const char *home_str, const char *frame_str) :
     home_initialized(false),
     inited_first_pkt_timestamp(false)
 {
+    // Force ArduPlane to use sensor data from SilentWings as the actual state,
+    // without using EKF, i.e., using "fake EKF (type 10)". Disable gyro calibration.
+    // Set a few other parameters to specific values to keep the calibration checks happy.
+    for (uint8_t i = 0; i < ARRAY_SIZE(sim_defaults); i++) {
+        AP_Param::set_default_by_name(sim_defaults[i].name, sim_defaults[i].value);
+        if (sim_defaults[i].save) {
+            enum ap_var_type ptype;
+            AP_Param *p = AP_Param::find(sim_defaults[i].name, &ptype);
+            if (!p->configured()) {
+                p->save();
+            }
+        }
+    }
+}
+
+
+/*
+  Create and set in/out socket
+*/
+void SilentWings::set_interface_ports(const char* address, const int port_in, const int port_out)
+{
+    // Ignore the specified port_in.
     // Try to bind to a specific port so that if we restart ArduPilot
     // SilentWings keeps sending us packets. Not strictly necessary but
-    // useful for debugging
-    sock.bind("127.0.0.1", 6060);
-
+    // useful for debugging.
+	//
+	// Listen to input on all IP addresses this device has.
+    if (!sock.bind("0.0.0.0", _port_in)) {
+        fprintf(stderr, "SITL: socket bind for input failed. Port %d  - %s\n", _port_in, strerror(errno));
+        fprintf(stderr, "Aborting launch...\n");
+        exit(1);
+    }
+    printf("Bind %s:%d for SITL input\n", "0.0.0.0", _port_in);
     sock.reuseaddress();
     sock.set_blocking(false);
-    
-    // TO DO: Force ArduPlane to use sensor data from SilentWings as the actual state,
-    // without using EKF, i.e., using "fake EKF (type 10)". Disable gyro calibration
-    // For some reason, setting these parameters programmatically succeeds but has no effect.
-    // So, for now they need to be set manually in the .param file.
-    /*
-    AP_Param::set_default_by_name("AHRS_EKF_TYPE", 10);
-    AP_Param::set_default_by_name("EK2_ENABLE", 0);
-    AP_Param::set_default_by_name("INS_GYR_CAL", 0);
-    AP_Param::set_default_by_name("ARSPD_ENABLE", 1);
-    AP_Param::set_default_by_name("ARSPD_USE", 1);
-    */
+
+    _sw_address = address;
+    // Ignore the specified port_out.
+    printf("Setting Silent Wings interface to %s:%d \n", _sw_address, _sw_port);
 }
+
 
 /*
   decode and send servos
@@ -70,24 +116,25 @@ void SilentWings::send_servos(const struct sitl_input &input)
     float elevator = filtered_servo_angle(input, 1);
     float throttle = filtered_servo_range(input, 2);
     float rudder   = filtered_servo_angle(input, 3);
-    float flap     = 0.0f;
 
-    asprintf(&buf,
+    ssize_t buflen = asprintf(&buf,
              "JOY %f\n"
              "AIL %f\n"
              "ELE %f\n"
              "RUD %f\n"
-             "THR %f\n"
-             "FLP %f\n",
-             joystick, aileron, elevator, rudder, throttle, flap);
+             "THR %f\n",
+             joystick, aileron, elevator, rudder, throttle) - 1;
 
-    ssize_t buflen = strlen(buf);
+    if (buflen < 0) {
+        fprintf(stderr, "Fatal: Failed to allocate enough space for data\n"),
+        exit(1);
+    }
     
-    ssize_t sent = sock.sendto(buf, buflen, "127.0.0.1", 6070);
+    ssize_t sent = sock.sendto(buf, buflen, _sw_address, _sw_port);
     free(buf);
 
     if (sent < 0) {
-        fprintf(stderr, "Fatal: Failed to send on control socket\n"),
+        fprintf(stderr, "Fatal: Failed to send on control socket - error %i, %s\n", errno, strerror(errno));
         exit(1);
     }
     
@@ -254,7 +301,7 @@ void SilentWings::update(const struct sitl_input &input)
     
     update_mag_field_bf();
     
-    int32_t now = AP_HAL::millis();
+    uint32_t now = AP_HAL::millis();
     
     if (report.last_report_ms == 0) {
         report.last_report_ms = now;
@@ -270,5 +317,3 @@ void SilentWings::update(const struct sitl_input &input)
         report.frame_count = 0;
     }    
 }
-
-} // namespace SITL

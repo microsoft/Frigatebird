@@ -29,7 +29,7 @@ public:
     SilentWings(const char *home_str, const char *frame_str);
 
     /* Updates the aircraft model by one time step */
-    void update(const struct sitl_input &input);
+    void update(const struct sitl_input &input) override;
 
     /* Static object creator */
     static Aircraft *create(const char *home_str, const char *frame_str) {
@@ -74,7 +74,7 @@ private:
     } pkt;
     
     struct {
-        int32_t last_report_ms;
+        uint32_t last_report_ms;
         uint32_t data_count;
         uint32_t frame_count;
     } report;
@@ -82,6 +82,9 @@ private:
     bool recv_fdm(void);
     void process_packet();
     bool interim_update();
+	
+    /*  Create and set in/out socket for Silent Wings simulator */
+    void set_interface_ports(const char* address, const int port_in, const int port_out) override;
     
     /* Sends control inputs to the Silent Wings. */
     void send_servos(const struct sitl_input &input);
@@ -99,6 +102,9 @@ private:
     uint64_t time_base_us;
     
     SocketAPM sock;
+    const char *_sw_address = "127.0.0.1";
+    int _port_in = 6060;
+    int _sw_port = 6070;
 
     bool home_initialized;
 };

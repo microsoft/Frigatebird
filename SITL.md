@@ -64,7 +64,7 @@ The following instructions have been tested on Windows 10.
    
 		build/sitl/bin/arduplane --model silentwings --home 60.8805696600,11.6695970300,216,145
    
-   Here, `<lat>` and `<lon>` are the start location's latitude and longitude that you noted down when launching Silent Wings, with a "-" sign if latitude is S or longitude is W. However, `<alt>` should be the *elevation of the start location's terrain above sea level*, even if you chose to start in the air. To determine it, subtract the starting altitude you noted down earlier (it is AGL) from the altitde in the top left corner of the Silent Wings window (it is ASL). The result is the `<alt>` that you need to pass to the SITL. `<yaw>` is the initial heading you picked for the Silent Wings mission.
+   Here, `<lat>` and `<lon>` are the start location's latitude and longitude that you noted down when launching Silent Wings, with a "-" sign if latitude is S or longitude is W. **However, `<alt>` should be the *elevation of the start location's terrain above sea level*, even if you chose to start in the air.** To determine it, subtract the starting altitude you noted down earlier (it is AGL) from the altitde you see in the top left corner of the Silent Wings window (it is MSL) when the mission starts. The result is the `<alt>` that you need to pass to the SITL. Thus, note that for the mission in the above screenshot, `<alt>`=216, not 800. `<yaw>` is the initial heading you picked for the Silent Wings mission.
    
    **TIP**: We recommend start locations with near-zero terrain elevation above the sea level, because the SITL flavor Frigatebird/ArduPlane occasionally behaves quirky if the aircraft in the simulation descends below the home location's `<alt>`.
    
