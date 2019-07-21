@@ -91,7 +91,6 @@ class SoaringController
     float _last_roll;
     float _last_total_E;
     bool _new_data;
-    float _loiter_rad;
     bool _throttle_suppressed;
     float _ekf_buffer[EKF_MAX_BUFFER_SIZE][5];
     unsigned _nsamples;

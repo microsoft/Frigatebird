@@ -435,7 +435,6 @@ SoaringController::SoaringController(AP_AHRS &ahrs, AP_SpdHgtControl &spdHgt, AP
     _aparm(parms),
     _gps(AP::gps()),
     _new_data(false),
-    _loiter_rad(parms.loiter_radius),
     _throttle_suppressed(true),
     _prev_stall_prevention(parms.stall_prevention),
     _pomdsoar(this, rollController, scaling_speed),
@@ -519,8 +518,7 @@ SoaringController::check_cruise_criteria()
     } 
     else 
     {
-        _loiter_rad = _aparm.loiter_radius;
-        thermalability = (_ekf.X[0] * expf(-powf(_loiter_rad / _ekf.X[1], 2))) - EXPECTED_THERMALLING_SINK;
+        thermalability = (_ekf.X[0] * expf(-powf(_aparm.loiter_radius / _ekf.X[1], 2))) - EXPECTED_THERMALLING_SINK;
     }
 
     _msg_rate++;
