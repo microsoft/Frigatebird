@@ -266,7 +266,7 @@ const AP_Param::GroupInfo SoaringController::var_info[] =
     AP_GROUPINFO("ROLL_CLP", 32, SoaringController, _pomdsoar.c_lp, -1.12808702679),
 
     // @Param: VARIO_TYPE
-    // @DisplayName: Vario algorithm type
+    // @DisplayName: Vario algorithm type. Must be 0 unless poly_a, poly_b, and poly_c parameters have been set correctly for the given airframe.
     // @Description: 0=ArduSoar's, 1=Edwards with cosine bank correction, 2=Edwards with internal bank correction
     // @Units: 
     // @Range: 0 3
