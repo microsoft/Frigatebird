@@ -120,7 +120,8 @@ POMDSoarAlgorithm::assess_thermalability(uint8_t exit_mode)
 
     if (exit_mode == 1)
     {
-        float expected_thermalling_sink = _sc->correct_netto_rate(1, 0.0f, radians(_pomdp_roll_cmd), aspd);
+		// The vario type for POMDSoar *must* be 1 
+        float expected_thermalling_sink = _sc->_vario->calculate_aircraft_sinkrate(radians(_pomdp_roll_cmd));
         float dist_sqr = _sc->_ekf.X[2] * _sc->_ekf.X[2] + _sc->_ekf.X[3] * _sc->_ekf.X[3];
         thermalability = (_sc->_ekf.X[0] * expf(-dist_sqr / powf(_sc->_ekf.X[1], 2))) - expected_thermalling_sink;
     }
@@ -132,7 +133,7 @@ POMDSoarAlgorithm::assess_thermalability(uint8_t exit_mode)
 
         for (int i = 0; i < n_samps; i++)
         {
-            float expected_thermalling_sink = _sc->correct_netto_rate(1, 0.0f, radians(theta), aspd);
+            float expected_thermalling_sink = _sc->_vario->calculate_aircraft_sinkrate(radians(theta));
             float r = (aspd * aspd) / (GRAVITY_MSS * tanf(radians(theta)));
             thermalability = MAX(thermalability, (_sc->_ekf.X[0] * expf(-(r*r) / powf(_sc->_ekf.X[1], 2))) - expected_thermalling_sink);
             theta += theta_step;

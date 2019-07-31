@@ -48,6 +48,7 @@
 #define DBG_GNDDY 11
 
 class POMDSoarAlgorithm;
+class Variometer;
 
 //
 // Soaring Controller class
@@ -55,12 +56,13 @@ class POMDSoarAlgorithm;
 class SoaringController
 {
     friend class POMDSoarAlgorithm;
+    friend class Variometer;
 
     ExtendedKalmanFilter _ekf{};
     WindExtendedKalmanFilter _wind_ekf{};
-    VarioSavitzkyGolayFilter _vario_sg_filter{};
     AP_AHRS &_ahrs;
     AP_SpdHgtControl &_spdHgt;
+    Variometer *_vario;
     AP_Vehicle::FixedWing &_aparm;
     const AP_GPS &_gps;
     const float rate_hz = 5;
@@ -68,6 +70,7 @@ class SoaringController
     // store aircraft location at last update
     struct Location _prev_update_location;
     struct Location _prev_vario_update_location;
+    struct Location _thermal_start_location;
 
     // store time thermal was entered for hysteresis
     uint64_t _thermal_start_time_us;
@@ -81,15 +84,10 @@ class SoaringController
     // store time of last update of the vario
     uint64_t _prev_vario_update_time;
 
-    float _vario_reading;
     bool _vario_updated = false;
-    float _filtered_vario_reading;
-    float _filtered_vario_reading_rate;
     float _last_alt;
-    float _alt;
     float _last_aspd;
     float _last_roll;
-    float _last_total_E;
     bool _new_data;
     bool _throttle_suppressed;
     float _ekf_buffer[EKF_MAX_BUFFER_SIZE][5];
@@ -99,9 +97,6 @@ class SoaringController
     bool _inhibited = false;
     uint64_t _thermal_id = 0;
     float _wind_corrected_gspd = 0.01;
-    float _displayed_vario_reading;
-    float _aspd_filt;
-    float correct_netto_rate(int type, float climb_rate, float phi, float aspd) const;
     float McCready(float alt);
     void get_wind_corrected_drift(const Location *current_loc, const Location *prev_loc, const Vector3f *wind, float *wind_drift_x, float *wind_drift_y, float *dx, float *dy, float *gdx, float *gdy);
     void get_altitude_wrt_home(float *alt) const;
@@ -129,7 +124,7 @@ class SoaringController
     uint8_t _prev_run_timing_test;
     POMDSoarAlgorithm _pomdsoar;
 
-protected:	
+protected:  
     AP_Int8 soar_active;
     AP_Int8 soar_active_ch;
     AP_Float thermal_vspeed;
@@ -167,6 +162,7 @@ protected:
 
 public:
     SoaringController(AP_AHRS &ahrs, AP_SpdHgtControl &spdHgt, AP_Vehicle::FixedWing &parms, AP_RollController &rollController, AP_Float &scaling_speed);
+    ~SoaringController();
     
     // this supports the TECS_* user settable parameters
     static const struct AP_Param::GroupInfo var_info[];
@@ -184,7 +180,7 @@ public:
     bool is_active() const;
     bool get_throttle_suppressed() const { return _throttle_suppressed; }
     void set_throttle_suppressed(bool suppressed) { _throttle_suppressed = suppressed;  }
-    float get_vario_reading() { return _displayed_vario_reading; }
+    float get_vario_reading();
     bool update_vario();
     void soaring_policy_computation();
     void soaring_policy_computation2();

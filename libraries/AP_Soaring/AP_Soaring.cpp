@@ -432,6 +432,7 @@ const AP_Param::GroupInfo SoaringController::var_info[] =
 SoaringController::SoaringController(AP_AHRS &ahrs, AP_SpdHgtControl &spdHgt, AP_Vehicle::FixedWing &parms, AP_RollController  &rollController, AP_Float &scaling_speed) :
     _ahrs(ahrs),
     _spdHgt(spdHgt),
+    _vario(new Variometer(ahrs,parms,this)),
     _aparm(parms),
     _gps(AP::gps()),
     _new_data(false),
@@ -448,6 +449,14 @@ SoaringController::SoaringController(AP_AHRS &ahrs, AP_SpdHgtControl &spdHgt, AP
     MatrixN<float, 3> Q = (const float[]) { 0.0001, 0.001, 0.001 };
     float R = 0.5;
     _wind_ekf.reset(X, P, Q, R);
+}
+
+SoaringController::~SoaringController(){ delete _vario; }
+
+float
+SoaringController::get_vario_reading()
+{
+    return _vario->displayed_reading;
 }
 
 
@@ -470,8 +479,7 @@ SoaringController::get_target(Location &wp)
 bool
 SoaringController::suppress_throttle()
 {
-    float alt = 0;
-    get_altitude_wrt_home(&alt);
+    float alt = _vario->alt;
 
     if (_throttle_suppressed && (alt < alt_min))
     {
@@ -487,7 +495,7 @@ SoaringController::suppress_throttle()
         _cruise_start_time_us = AP_HAL::micros64();
         // Reset the filtered vario rate - it is currently elevated due to the climb rate and would otherwise take a while to fall again,
         // leading to false positives.
-        _filtered_vario_reading = 0;
+        _vario->filtered_reading = 0;
     }
 
     return _throttle_suppressed;
@@ -500,10 +508,10 @@ SoaringController::check_thermal_criteria()
     //gcs().send_text((MAV_SEVERITY_INFO, "_cruise_start_time_us %lluus %lluus", _cruise_start_time_us, AP_HAL::micros64() - _cruise_start_time_us);
     return (soar_active && !_inhibited
             && ((AP_HAL::micros64() - _cruise_start_time_us) > ((unsigned)min_cruise_s * 1e6))
-            && ((sg_filter == 1 && _filtered_vario_reading > thermal_vspeed && _filtered_vario_reading_rate < 0)
-            || (sg_filter == 0 && _filtered_vario_reading > thermal_vspeed))
-            && _alt < alt_max
-            && _alt > alt_min);
+            && ((sg_filter == 1 && _vario->filtered_reading - _vario->get_exp_thermalling_sink() > thermal_vspeed && _vario->filtered_reading_rate < 0)
+            || (sg_filter == 0 && _vario->filtered_reading - _vario->get_exp_thermalling_sink() > thermal_vspeed))
+            && _vario->alt < alt_max
+            && _vario->alt > alt_min);
 }
 
     
@@ -518,7 +526,7 @@ SoaringController::check_cruise_criteria()
     } 
     else 
     {
-        thermalability = (_ekf.X[0] * expf(-powf(_aparm.loiter_radius / _ekf.X[1], 2))) - EXPECTED_THERMALLING_SINK;
+        thermalability = (_ekf.X[0] * expf(-powf(_aparm.loiter_radius / _ekf.X[1], 2))) - _vario->get_exp_thermalling_sink();
     }
 
     _msg_rate++;
@@ -528,17 +536,17 @@ SoaringController::check_cruise_criteria()
         gcs().send_text(MAV_SEVERITY_INFO, "Thermalling inhibited");
         _soaring = false;
         return true;
-    }
-    else if (soar_active && (AP_HAL::micros64() - _thermal_start_time_us) > ((unsigned)min_thermal_s * 1e6) && thermalability < McCready(_alt))
+    } 
+    else if (soar_active && (_vario->alt>  alt_max || _vario->alt < alt_min))
     {
-        gcs().send_text(MAV_SEVERITY_INFO, "Thml weak: w %f W %f R %f", (double)thermalability, (double)_ekf.X[0], (double)_ekf.X[1]);
-        gcs().send_text(MAV_SEVERITY_INFO, "Thml weak: th %f alt %f Mc %f", (double)thermalability, (double)_alt, (double)McCready(_alt));
+        gcs().send_text(MAV_SEVERITY_ALERT, "Out of allowable altitude range, beginning cruise. Alt = %f\n", (double)_vario->alt);
         _soaring = false;
         return true;
-    } 
-    else if (soar_active && (_alt>alt_max || _alt<alt_min))
+    }
+    else if (soar_active && (AP_HAL::micros64() - _thermal_start_time_us) > ((unsigned)min_thermal_s * 1e6) && (thermalability < McCready(_vario->alt)))
     {
-        gcs().send_text(MAV_SEVERITY_ALERT, "Out of allowable altitude range, beginning cruise. Alt = %f\n", (double)_alt);
+        gcs().send_text(MAV_SEVERITY_INFO, "Thml weak: w %f W %f R %f", (double)thermalability, (double)_ekf.X[0], (double)_ekf.X[1]);
+        gcs().send_text(MAV_SEVERITY_INFO, "Thml weak: th %f alt %f Mc %f", (double)thermalability, (double)_vario->alt, (double)McCready(_vario->alt));
         _soaring = false;
         return true;
     }
@@ -619,11 +627,13 @@ SoaringController::init_thermalling()
     {
         _aparm.stall_prevention = 0;
     }
-
+    
     get_position(_prev_update_location);
+    _thermal_start_location = _prev_update_location;
     _prev_update_time = AP_HAL::micros64();
     _thermal_start_time_us = AP_HAL::micros64();
     _pomdsoar.init_thermalling();
+    gcs().send_text(MAV_SEVERITY_INFO, "Starting to thermal. Th. s. alt: %f", (double)_thermal_start_location.alt);
 }
 
 
@@ -692,7 +702,7 @@ SoaringController::update_thermalling()
     struct Location current_loc;
     get_position(current_loc);
 
-    if (soar_active		
+    if (soar_active     
         && uses_POMDSoar()
         && _pomdsoar.are_computations_in_progress()
         && (is_in_thermal_locking_period() || _pomdsoar.is_set_to_continue_past_thermal_locking_period()))
@@ -715,7 +725,7 @@ SoaringController::update_thermalling()
         DataFlash_Class::instance()->Log_Write("SOAR", "TimeUS,id,nettorate,dx,dy,x0,x1,x2,x3,lat,lng,alt,dx_w,dy_w", "QQfffffffLLfff",
                                                AP_HAL::micros64(),
                                                 _thermal_id,
-                                               (double)_vario_reading,
+                                               (double)_vario->reading,
                                                (double)_dx,
                                                (double)_dy,
                                                (double)_ekf.X[0],
@@ -724,10 +734,10 @@ SoaringController::update_thermalling()
                                                (double)_ekf.X[3],
                                                current_loc.lat,
                                                current_loc.lng,
-                                               (double)_alt,
+                                               (double)_vario->alt,
                                                (double)_dx_w,
                                                (double)_dy_w);
-        _ekf.update(_vario_reading,_dx, _dy); // update the filter
+        _ekf.update(_vario->reading,_dx, _dy); // update the filter
         _prev_update_location = current_loc; // save for next time
         _prev_update_time = AP_HAL::micros64();
         _new_data = false;
@@ -787,7 +797,7 @@ bool SoaringController::update_vario()
         _vario_updated = true;
         Location current_loc;
         get_position(current_loc);
-        get_altitude_wrt_home(&_alt);
+        //get_altitude_wrt_home(&_alt);
 
         // Both filtered total energy rates and unfiltered are computed for the thermal switching logic and the EKF
         float aspd = 0;
@@ -811,51 +821,10 @@ bool SoaringController::update_vario()
         {
             _wind_ekf.update(gnd_vel.x, gnd_vel.y, aspd_sensor);
         }
-        //gcs().send_text(MAV_SEVERITY_INFO, "Wind EKF in : %f %f %f",diff.x, diff.y, aspd_sensor);
-        //gcs().send_text(MAV_SEVERITY_INFO, "Wind EKF out: %f %f %f",_wind_ekf.X[0],_wind_ekf.X[1],_wind_ekf.X[2]);
-        aspd = get_aspd();
         
-        if (aspd_src == 2)
-        {
-            float tau = 2;
-            float aspd_dot = (aspd - _aspd_filt) / tau;
-            _aspd_filt += aspd_dot * dt;
-        }
-        else
-        {
-            _aspd_filt = ASPD_FILT * aspd + (1 - ASPD_FILT) * _aspd_filt;
-        }
-
-        float total_E = _alt + 0.5 *_aspd_filt * _aspd_filt / GRAVITY_MSS;   // Work out total energy
-        float sinkrate = correct_netto_rate(vario_type, 0.0f, (roll + _last_roll) / 2, _aspd_filt);   // Compute still-air sink rate
-
-        if (debug_mode)
-        {
-            _vario_reading = _debug_in[DBG_VARIO];
-        } 
-        else
-        {
-            _vario_reading = (total_E - _last_total_E) / ((now - _prev_vario_update_time) * 1e-6) + sinkrate;    // Unfiltered netto rate
-        }
-
-        if (run_timing_test == 8)
-        {
-            Vector2f thml_offset = location_diff(_test_thml_loc, current_loc);
-            float dist_sqr = thml_offset.x * thml_offset.x + thml_offset.y * thml_offset.y;
-            float thml_w = _test_thml_w * expf(-dist_sqr / powf(_test_thml_r, 2));
-            _vario_reading += thml_w;
-        }
-
-        if (sg_filter == 1)
-        {
-            _vario_sg_filter.prediction(dt, _ekf_buffer, EKF_MAX_BUFFER_SIZE, _ptr, &_filtered_vario_reading, &_filtered_vario_reading_rate);
-        }
-        else
-        {
-            _filtered_vario_reading = TE_FILT * _vario_reading + (1 - TE_FILT) * _filtered_vario_reading;  // Apply low pass timeconst filter for noise
-        }
-
-        _displayed_vario_reading = TE_FILT_DISPLAYED * _vario_reading + (1 - TE_FILT_DISPLAYED) * _displayed_vario_reading;
+        // Update the vario
+        _vario->update(dt); 
+        
         Vector3f wind = _ahrs.wind_estimate();
         get_wind_corrected_drift(&current_loc, &_prev_vario_update_location, &wind, &_dx_w, &_dy_w, &_dx, &_dy, &_gdx, &_gdy);
         
@@ -868,7 +837,7 @@ bool SoaringController::update_vario()
         //gcs().send_text(MAV_SEVERITY_INFO, "old lat %d lng %d", _prev_vario_update_location.lat,_prev_vario_update_location.lng);
         //gcs().send_text(MAV_SEVERITY_INFO, "new lat %d lng %d", current_loc.lat,current_loc.lng);
         //gcs().send_text(MAV_SEVERITY_INFO, "dx %f dy %f dt %f", _dx * 1000, _dy * 1000, _mavlink_dt * 1e-6);
-        _ekf_buffer[_ptr][0] = _vario_reading;
+        _ekf_buffer[_ptr][0] = _vario->reading;
         _ekf_buffer[_ptr][1] = _dx;
         _ekf_buffer[_ptr][2] = _dy;
         _ekf_buffer[_ptr][3] = _gdx;
@@ -890,23 +859,25 @@ bool SoaringController::update_vario()
         }
 
         // Store variables
-        _last_alt = _alt;
+        _last_alt = _vario->alt;
         _last_roll = roll;
         _last_aspd = aspd;
-        _last_total_E = total_E;
         _prev_vario_update_time = now;
         _prev_vario_update_location = current_loc;
         _new_data = true;
         _vario_updated_reset_random = true;
 
-        DataFlash_Class::instance()->Log_Write("VAR", "TimeUS,aspd_raw,aspd_filt,alt,roll,raw,filt,wx,wy,dx,dy,polar,az", "QffffffffffBf",
+        DataFlash_Class::instance()->Log_Write("VAR", "TimeUS,aspd_raw,aspd_filt,alt,roll,raw,filt,cl,fc,exs,wx,wy,dx,dy,polar,az", "QfffffffffffffBf",
                                                AP_HAL::micros64(),
                                                (double)aspd,
-                                               (double)_aspd_filt,
-                                               (double)_alt,
+                                               (double)_vario->aspd_filt_constrained,
+                                               (double)_vario->alt,
                                                (double)roll,
-                                               (double)_vario_reading,
-                                               (double)_filtered_vario_reading,
+                                               (double)_vario->reading,
+                                               (double)_vario->filtered_reading,
+                                               (double)_vario->raw_climb_rate,
+                                               (double)_vario->smoothed_climb_rate,
+                                               (double)_vario->get_exp_thermalling_sink(),
                                                (double)wind.x,
                                                (double)wind.y,
                                                (double)_dx,
@@ -932,45 +903,6 @@ bool SoaringController::update_vario()
     {
         return false;
     }
-}
-
-
-float
-SoaringController::correct_netto_rate(int type, float climb_rate, float phi, float aspd) const
-{
-    if (type == 0) 
-    {
-        // Remove aircraft sink rate
-        float CL0 = 0;  // CL0 = 2*W/(rho*S*V^2)
-        float C1 = 0;   // C1 = CD0/CL0
-        float C2 = 0;   // C2 = CDi0/CL0 = B*CL0
-        float netto_rate;
-        float cosphi;
-        CL0 = polar_K / (aspd * aspd);
-        C1 = polar_CD0 / CL0;  // constant describing expected angle to overcome zero-lift drag
-        C2 = polar_B * CL0;    // constant describing expected angle to overcome lift induced drag at zero bank
-
-        cosphi = (1 - phi * phi / 2); // first two terms of mclaurin series for cos(phi)
-        netto_rate = climb_rate + aspd * (C1 + C2 / (cosphi * cosphi));  // effect of aircraft drag removed
-        return netto_rate;
-    }
-    else if (type == 1)
-    {
-        float netto_rate;
-        float cosphi;
-        cosphi = (1 - phi * phi / 2); // first two terms of McLaurin series for cos(phi)
-        netto_rate = climb_rate - (poly_a * aspd* aspd + poly_b * aspd + poly_c) / cosphi;
-        return netto_rate;
-    }
-    else if (type == 2)
-    {
-        float netto_rate;
-        float az = fabsf(AP::ins().get_accel().z);
-        float n = az / GRAVITY_MSS;
-        netto_rate = climb_rate - (poly_a * aspd * aspd + poly_b * aspd + poly_c) * powf(n, 1.5);
-        return netto_rate;
-    }
-    return 0;
 }
 
 
@@ -1099,7 +1031,7 @@ SoaringController::send_status_msg(mavlink_channel_t chan)
         {
             soaring_state = 2;
         }
-        else if (_filtered_vario_reading > thermal_vspeed)
+        else if (_vario->filtered_reading > thermal_vspeed)
         {
             soaring_state = 1;
         }
@@ -1121,8 +1053,8 @@ SoaringController::send_status_msg(mavlink_channel_t chan)
         _pomdsoar.get_latest_pomdp_solve_time(), //<field name="pomdp_solve_time" type="uint64_t">POMDP solve time</field>
         X, //<field name="X" type="float[4]">Thermal state</field>
         P, //<field name="P" type="float[16]">EKF P matrix diagonal</field>
-        _vario_reading, //<field name="vario" type="float">Netto vario signal</field>
-        _filtered_vario_reading //<field name="vario_filt" type="float">Filtered netto vario signal</field>
+        _vario->reading, //<field name="vario" type="float">Netto vario signal</field>
+        _vario->filtered_reading //<field name="vario_filt" type="float">Filtered netto vario signal</field>
         ); 
 }
 
