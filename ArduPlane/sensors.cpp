@@ -314,4 +314,12 @@ void Plane::update_sensor_status_flags(void)
     // give mask of error flags to Frsky_Telemetry
     frsky_telemetry.update_sensor_status_flags(~control_sensors_health & control_sensors_enabled & control_sensors_present);
 #endif
+
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    if (ahrs.get_ekf_type() == 10) {
+        // always show EKF type 10 as healthy. This prevents spurious error
+        // messages in xplane and other simulators that use EKF type 10
+        control_sensors_health |= MAV_SYS_STATUS_AHRS | MAV_SYS_STATUS_SENSOR_GPS | MAV_SYS_STATUS_SENSOR_3D_ACCEL | MAV_SYS_STATUS_SENSOR_3D_GYRO;
+    }
+#endif
 }
