@@ -30,6 +30,8 @@ airport {
 }
 
 multiplayer = false
+mp_server   = 157.54.154.103
+mp_nick     = AceOfSpades
 mp_port     = 1209
 
 flight {
@@ -41,7 +43,7 @@ flight {
    comp_id     = AA
    registration = LN-GAA
    start_time  = 0
-   utc_offset  = -1742410382
+   utc_offset  = 0
    reg_color = [ 0 0 0 ]
    comp_color = [ 0 0 0 ]
 }
@@ -55,7 +57,7 @@ flight {
    comp_id     = AB
    registration = LN-GAB
    start_time  = 0
-   utc_offset  = -1519176082
+   utc_offset  = 1455691818
    reg_color = [ 0 0 0 ]
    comp_color = [ 0 0 0 ]
 }
@@ -69,7 +71,7 @@ flight {
    comp_id     = AC
    registration = LN-GAC
    start_time  = 0
-   utc_offset  = 972621140
+   utc_offset  = 0
    reg_color = [ 0 0 0 ]
    comp_color = [ 0 0 0 ]
 }
@@ -79,10 +81,10 @@ weather {
       wind_str = 60
       wind_dir = 360
    }
-   max_num_thermals = 2012
-   max_num_sink     = 503
-   thermal_strength = 4
-   thermal_radius   = 227
+   max_num_thermals = 5012
+   max_num_sink     = 1253
+   thermal_strength = 7.2
+   thermal_radius   = 412
    thermal_ceiling  = 2500
    cumulus_prob     = 0.4
    cumulus_base     = 2000
