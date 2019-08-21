@@ -15,6 +15,7 @@ Variometer::Variometer(AP_AHRS &ahrs, const AP_Vehicle::FixedWing &parms, Soarin
 void Variometer::update(float dt)
 {
     _sc->get_altitude_wrt_home(&alt);
+	/*
     // Logic borrowed from AP_TECS.cpp
     // Update and average speed rate of change
     // Get DCM
@@ -23,6 +24,7 @@ void Variometer::update(float dt)
     float temp = rotMat.c.x * GRAVITY_MSS + AP::ins().get_accel().x;
     // take 5 point moving average
     float dsp = _vdot_filter.apply(temp);
+	*/
 
 
     float aspd = _sc->get_aspd();
